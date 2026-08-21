@@ -1,0 +1,42 @@
+// AUTHORITATIVE PACKAGE CONFIGURATION
+module.exports = {
+  OPTION_A: {
+    id: 'OPTION_A',
+    name: 'Professional Case Assessment',
+    basePrice: 250,
+    additionalApplicantPrice: 0,
+    vatRate: 5,
+    refundable: false,
+    creditEligible: false,
+    creditProvider: true,
+  },
+  OPTION_B: {
+    id: 'OPTION_B',
+    name: 'Full Processing Package — End-to-End Service',
+    basePrice: 3500,
+    additionalApplicantPrice: 500,
+    vatRate: 5,
+    refundable: true,
+    refundPercent: 100,
+    creditEligible: true,
+  },
+  OPTION_C: {
+    id: 'OPTION_C',
+    name: 'Administrative Relocation Package',
+    basePrice: 1750,
+    additionalApplicantPrice: 500,
+    vatRate: 5,
+    refundable: false,
+    creditEligible: true,
+  },
+  OPTION_D: {
+    id: 'OPTION_D',
+    name: 'Premium Package — End-to-End + Relocation',
+    basePrice: 4750,
+    additionalApplicantPrice: 750,
+    vatRate: 5,
+    refundable: true,
+    refundPercent: 100,
+    creditEligible: true,
+  },
+};
