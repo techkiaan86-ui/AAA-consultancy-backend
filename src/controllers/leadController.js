@@ -35,6 +35,7 @@ const getLeads = async (req, res) => {
         campaignId: true,
         status: true,
         notes: true,
+        caseComments: true,
         timeline: true,
         qualificationData: true,
         dependentsDetails: true,
@@ -112,6 +113,8 @@ const getLeads = async (req, res) => {
         assignedConsultantName: l.assignedTo?.fullName,
         clientCode: autoCode,
         displayId: autoCode,
+        caseComments: Array.isArray(l.caseComments) ? l.caseComments : [],
+        comments: Array.isArray(l.caseComments) ? l.caseComments : [],
         documents: l.client?.documents || [],
         payments: l.client?.payments || [],
         payment: l.client?.payments?.[0] || null,
@@ -626,6 +629,7 @@ const getLeadById = async (req, res) => {
         campaignId: true,
         status: true,
         notes: true,
+        caseComments: true,
         timeline: true,
         qualificationData: true,
         dependentsDetails: true,
@@ -672,6 +676,8 @@ const getLeadById = async (req, res) => {
       assignedConsultantName: lead.assignedTo?.fullName,
       clientCode: autoCode,
       displayId: autoCode,
+      caseComments: Array.isArray(lead.caseComments) ? lead.caseComments : [],
+      comments: Array.isArray(lead.caseComments) ? lead.caseComments : [],
       documents: lead.client?.documents || []
     };
     res.json(mapped);
@@ -697,6 +703,8 @@ const updateLead = async (req, res) => {
       campaignId, 
       status, 
       notes, 
+      caseComments,
+      comments,
       timeline, 
       qualificationData,
       assignedConsultantId,
@@ -707,6 +715,8 @@ const updateLead = async (req, res) => {
       wordCount,
       nextFollowUpDate
     } = req.body;
+
+    const incomingComments = caseComments !== undefined ? caseComments : comments;
 
     const lead = await prisma.lead.update({
       where: { id },
@@ -723,6 +733,7 @@ const updateLead = async (req, res) => {
         campaignId,
         status,
         notes,
+        caseComments: incomingComments !== undefined ? (Array.isArray(incomingComments) ? incomingComments : []) : undefined,
         timeline,
         qualificationData,
         assignedToId: assignedConsultantId,
@@ -747,7 +758,9 @@ const updateLead = async (req, res) => {
       ...lead,
       name: `${lead.firstName} ${lead.lastName}`,
       serviceId: lead.serviceType,
-      assignedConsultantId: lead.assignedToId
+      assignedConsultantId: lead.assignedToId,
+      caseComments: Array.isArray(lead.caseComments) ? lead.caseComments : [],
+      comments: Array.isArray(lead.caseComments) ? lead.caseComments : []
     };
     res.json(mapped);
   } catch (error) {

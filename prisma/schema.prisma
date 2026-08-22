@@ -62,6 +62,7 @@ model Lead {
   campaignId       String?
   status           String   @default("New Lead")
   notes            String?  @db.Text
+  caseComments     Json?    // Array of { id, text, author, authorId, authorRole, date, time, createdAt, updatedAt }
   timeline         Json?
   qualificationData Json?
   dependentsDetails Json?
