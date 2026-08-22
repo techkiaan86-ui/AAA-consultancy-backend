@@ -193,9 +193,10 @@ async function ensurePhase2Schema() {
     }
   }
 
-  // 7. Ensure clients table passportNumber column exists
+  // 7. Ensure clients table columns exist
   const clientCols = [
-    { name: 'passportNumber', sql: 'ALTER TABLE `clients` ADD COLUMN `passportNumber` VARCHAR(191) NULL;' }
+    { name: 'passportNumber', sql: 'ALTER TABLE `clients` ADD COLUMN `passportNumber` VARCHAR(191) NULL;' },
+    { name: 'caseComments', sql: 'ALTER TABLE `clients` ADD COLUMN `caseComments` JSON NULL;' }
   ];
 
   for (const col of clientCols) {
