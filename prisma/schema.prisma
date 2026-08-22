@@ -109,6 +109,7 @@ model Client {
   isTemporaryPassword Boolean @default(true)
   phone            String
   nationality      String?
+  passportNumber   String?
   countryOfResidence String?
   preferredLanguage String? @default("English")
   serviceType      String?

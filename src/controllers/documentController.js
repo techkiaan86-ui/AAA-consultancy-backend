@@ -110,13 +110,36 @@ const uploadDocument = async (req, res) => {
       }
     });
 
-    // Auto-update client passportNumber if provided in payload
+    // Auto-update client or dependent passportNumber if provided in payload
     if (req.body.passportNumber && clientId) {
       try {
-        await prisma.client.update({
-          where: { id: clientId },
-          data: { passportNumber: req.body.passportNumber }
-        });
+        const passNum = String(req.body.passportNumber).trim();
+        if (belongsTo === 'Main Applicant' || !belongsTo) {
+          await prisma.client.update({
+            where: { id: clientId },
+            data: { passportNumber: passNum }
+          });
+        } else {
+          const clientRec = await prisma.client.findUnique({
+            where: { id: clientId },
+            select: { dependentsDetails: true }
+          });
+          if (clientRec && Array.isArray(clientRec.dependentsDetails)) {
+            const updatedDeps = clientRec.dependentsDetails.map(dep => {
+              const depName = `${dep.firstName || ''} ${dep.lastName || ''}`.trim().toLowerCase();
+              const depFirstName = (dep.firstName || '').trim().toLowerCase();
+              const target = (belongsTo || '').toLowerCase();
+              if ((depFirstName && target.includes(depFirstName)) || (depName && target.includes(depName))) {
+                return { ...dep, passportNumber: passNum };
+              }
+              return dep;
+            });
+            await prisma.client.update({
+              where: { id: clientId },
+              data: { dependentsDetails: updatedDeps }
+            });
+          }
+        }
       } catch (pErr) {
         console.warn('[DocUpload] Could not update client passport number:', pErr.message);
       }
@@ -374,6 +397,8 @@ const uploadBatchDocuments = async (req, res) => {
 
     const createdDocs = [];
     const batchId = `BATCH-${Date.now()}`;
+    let mainPassportNum = null;
+    const depPassportMap = {};
 
     for (let i = 0; i < req.files.length; i++) {
       const file = req.files[i];
@@ -383,6 +408,15 @@ const uploadBatchDocuments = async (req, res) => {
         category = autoCategorizeDocument(file.originalname);
       }
       const belongsTo = meta.belongsTo || req.body.belongsTo || 'Main Applicant';
+      const passportNum = meta.passportNumber || (category.toLowerCase().includes('passport') ? req.body.passportNumber : null);
+
+      if (passportNum && typeof passportNum === 'string' && passportNum.trim()) {
+        if (belongsTo === 'Main Applicant' || !belongsTo) {
+          mainPassportNum = passportNum.trim();
+        } else {
+          depPassportMap[belongsTo] = passportNum.trim();
+        }
+      }
 
       const document = await prisma.document.create({
         data: {
@@ -399,15 +433,35 @@ const uploadBatchDocuments = async (req, res) => {
       createdDocs.push(document);
     }
 
-    // Update client status to "Documents Under Review" and enable documentUploadAllowed
+    // Update client status to "Documents Under Review", enable documentUploadAllowed, and update passportNumbers
     if (clientId) {
+      const clientUpdateData = {
+        status: 'Documents Under Review',
+        documentUploadAllowed: true
+      };
+
+      if (mainPassportNum) {
+        clientUpdateData.passportNumber = mainPassportNum;
+      }
+
+      if (Object.keys(depPassportMap).length > 0 && Array.isArray(existingClient.dependentsDetails)) {
+        clientUpdateData.dependentsDetails = existingClient.dependentsDetails.map(dep => {
+          for (const [key, pNum] of Object.entries(depPassportMap)) {
+            const depFullName = `${dep.firstName || ''} ${dep.lastName || ''}`.trim().toLowerCase();
+            const depFirstName = (dep.firstName || '').trim().toLowerCase();
+            const k = key.toLowerCase();
+            if ((depFirstName && k.includes(depFirstName)) || (depFullName && k.includes(depFullName))) {
+              return { ...dep, passportNumber: pNum };
+            }
+          }
+          return dep;
+        });
+      }
+
       const updatedClient = await prisma.client.update({
         where: { id: clientId },
-        data: {
-          status: 'Documents Under Review',
-          documentUploadAllowed: true
-        }
-      }).catch(err => console.warn('[BatchUpload] Could not update client status:', err.message));
+        data: clientUpdateData
+      }).catch(err => console.warn('[BatchUpload] Could not update client status/passports:', err.message));
 
       // Trigger ONE single consolidated Notification (WhatsApp / Email / CRM / AuditLog)
       if (updatedClient) {

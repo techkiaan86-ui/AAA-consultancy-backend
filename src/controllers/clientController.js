@@ -751,7 +751,7 @@ const changeClientPassword = async (req, res) => {
 const updateClientDependents = async (req, res) => {
   try {
     const { id } = req.params;
-    const { dependents } = req.body;
+    const { dependents, passportNumber, mainPassportNumber } = req.body;
 
     if (req.user.role === 'client' && req.user.id !== id) {
       return res.status(403).json({ message: 'Access denied. You cannot modify family profiles for other clients.' });
@@ -759,12 +759,14 @@ const updateClientDependents = async (req, res) => {
 
     const count = Array.isArray(dependents) ? dependents.length : 0;
     const applicantsCountStr = count > 0 ? `Main + ${count}` : 'Main Only';
+    const mainPass = mainPassportNumber || passportNumber;
 
     const client = await prisma.client.update({
       where: { id },
       data: {
         dependentsDetails: dependents,
-        applicantsCount: applicantsCountStr
+        applicantsCount: applicantsCountStr,
+        ...(mainPass ? { passportNumber: String(mainPass).trim() } : {})
       }
     });
 
