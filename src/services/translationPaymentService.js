@@ -272,6 +272,57 @@ async function handleSwornTranslationPaymentSuccess({ leadId, session, reqApp = 
     data: updateLeadData
   });
 
+  // Sync uploaded translation documents to Client in Document table
+  try {
+    const rawDocs = Array.isArray(lead.qualificationData?.documents) ? lead.qualificationData.documents : [];
+    if (rawDocs.length > 0) {
+      for (const doc of rawDocs) {
+        if (doc.url || doc.name) {
+          const existingDoc = await prisma.document.findFirst({
+            where: {
+              clientId: client.id,
+              name: doc.name || 'Translation Document.pdf'
+            }
+          });
+          if (!existingDoc) {
+            await prisma.document.create({
+              data: {
+                clientId: client.id,
+                name: doc.name || 'Translation Document.pdf',
+                fileUrl: doc.url || '',
+                category: doc.category || 'Sworn Translation',
+                status: 'Pending',
+                notes: `Source: ${doc.sourceLanguage || doc.documentLanguage || sourceLang} ➔ Target: ${doc.targetLanguage || targetLang} | Words: ${doc.wordCount || wordCount}`
+              }
+            }).catch(dErr => console.warn('[TranslationDocCreate Warn]:', dErr.message));
+          }
+        }
+      }
+    } else if (lead.qualificationData?.documentUrl) {
+      const existingDoc = await prisma.document.findFirst({
+        where: {
+          clientId: client.id,
+          name: lead.qualificationData.documentName || 'Translation Document.pdf'
+        }
+      });
+      if (!existingDoc) {
+        await prisma.document.create({
+          data: {
+            clientId: client.id,
+            name: lead.qualificationData.documentName || 'Translation Document.pdf',
+            fileUrl: lead.qualificationData.documentUrl,
+            category: 'Sworn Translation',
+            status: 'Pending',
+            notes: `Source: ${sourceLang} ➔ Target: ${targetLang} | Words: ${wordCount}`
+          }
+        }).catch(dErr => console.warn('[TranslationDocCreate Warn]:', dErr.message));
+      }
+    }
+    console.log(`[TranslationPaymentService] ✅ Document records synced for Client ${client.id}`);
+  } catch (docSyncErr) {
+    console.error('[TranslationPaymentService] Failed syncing documents to client:', docSyncErr.message);
+  }
+
   // Audit Log Entry
   try {
     await prisma.auditLog.create({
