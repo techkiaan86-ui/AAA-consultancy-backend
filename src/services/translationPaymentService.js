@@ -1,5 +1,6 @@
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
+const bcrypt = require('bcrypt');
 const { sendCustomWhatsApp } = require('./chatbotService');
 const { sendEmail } = require('./emailService');
 
@@ -12,6 +13,18 @@ const formatDateDDMMYYYY = (date = new Date()) => {
   const month = String(d.getMonth() + 1).padStart(2, '0');
   const year = d.getFullYear();
   return `${day}/${month}/${year}`;
+};
+
+/**
+ * Generate a clean, secure 6-character temporary password
+ */
+const generateTempPassword = () => {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+  let pass = '';
+  for (let i = 0; i < 6; i++) {
+    pass += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return pass;
 };
 
 /**
@@ -80,6 +93,8 @@ async function handleSwornTranslationPaymentSuccess({ leadId, session, reqApp = 
 
   // 2. Strong Idempotency: Find or Create Client and Payment records in DB
   let client = null;
+  let plainTempPassword = null;
+
   if (lead.clientId) {
     client = await prisma.client.findUnique({ where: { id: lead.clientId } });
   }
@@ -89,6 +104,10 @@ async function handleSwornTranslationPaymentSuccess({ leadId, session, reqApp = 
   }
 
   if (!client) {
+    const tempPass = generateTempPassword();
+    plainTempPassword = tempPass;
+    const hashedPassword = await bcrypt.hash(tempPass, 10);
+
     try {
       // Create new client record for translation customer
       client = await prisma.client.create({
@@ -102,12 +121,14 @@ async function handleSwornTranslationPaymentSuccess({ leadId, session, reqApp = 
           status: 'Payment Completed',
           visaStatus: 'Not Applicable',
           documentUploadAllowed: true,
+          password: hashedPassword,
+          isTemporaryPassword: true,
           sourceLanguage: sourceLang,
           targetLanguage: targetLang,
           wordCount: wordCount
         }
       });
-      console.log(`[TranslationPaymentService] Created Client profile ${client.id} for Lead ${lead.id}`);
+      console.log(`[TranslationPaymentService] Created Client profile ${client.id} for Lead ${lead.id} with temp credentials`);
     } catch (clientCreateErr) {
       if (clientCreateErr.code === 'P2002' || clientCreateErr.message?.includes('Unique constraint')) {
         client = await prisma.client.findUnique({ where: { email: lead.email.toLowerCase() } });
@@ -116,14 +137,24 @@ async function handleSwornTranslationPaymentSuccess({ leadId, session, reqApp = 
       }
     }
   } else {
-    // Update existing client record
+    // Existing client: check if password exists, if not generate one
+    let updateData = {
+      status: 'Payment Completed',
+      documentUploadAllowed: true,
+      serviceType: client.serviceType || 'Spanish Sworn Translation'
+    };
+
+    if (!client.password) {
+      const tempPass = generateTempPassword();
+      plainTempPassword = tempPass;
+      const hashedPassword = await bcrypt.hash(tempPass, 10);
+      updateData.password = hashedPassword;
+      updateData.isTemporaryPassword = true;
+    }
+
     client = await prisma.client.update({
       where: { id: client.id },
-      data: {
-        status: 'Payment Completed',
-        documentUploadAllowed: true,
-        serviceType: client.serviceType || 'Spanish Sworn Translation'
-      }
+      data: updateData
     });
   }
 
@@ -262,6 +293,8 @@ async function handleSwornTranslationPaymentSuccess({ leadId, session, reqApp = 
   // NOTIFICATIONS (Executed OUTSIDE DB transaction, fault-tolerant)
   // -------------------------------------------------------------
 
+  const portalUrl = `${frontendUrl}/#/portal/login`;
+
   // 3. Client WhatsApp Confirmation
   const waIdempotencyKey = `SWORN_TRN_PAYMENT_WA_${sessionId}`;
   const existingWa = await prisma.communicationLog.findFirst({
@@ -277,7 +310,15 @@ async function handleSwornTranslationPaymentSuccess({ leadId, session, reqApp = 
     const clientPhone = lead.phone || client.phone;
     if (clientPhone && clientPhone.trim()) {
       const paymentDateFormatted = formatDateDDMMYYYY(new Date());
-      const waMessage = `Hello *${clientName}*,\n\nYour payment of *€${Number(totalPaid).toFixed(2)}* for *Spanish Sworn Translation (Traducción Jurada Oficial)* has been successfully received. 🎉\n\nThank you for your payment. We have recorded your payment and our certified sworn translators will now proceed with the next steps.\n\n📋 *Payment Reference:* ${paymentReference}\n📅 *Payment Date:* ${paymentDateFormatted}\n📑 *Words:* ${wordCount}\n🌐 *Language:* ${sourceLang} ➔ ${targetLang}\n\nYour official certified sworn translation with ministry certification stamps will be delivered to your registered email (*${lead.email}*) within max 7 working days.\n\nThank you for choosing AAA Business Consultancy! 🇪🇸`;
+
+      let credentialsWaSection = '';
+      if (plainTempPassword) {
+        credentialsWaSection = `\n\n🔑 *YOUR CLIENT PORTAL CREDENTIALS:*\n🌐 *Portal Link:* ${portalUrl}\n👤 *Username:* ${lead.email}\n🔑 *Temporary Password:* ${plainTempPassword}\n\n⚠️ *Note:* You can log in to your Client Portal to track your translation progress and download your official certified PDF as soon as it is ready.`;
+      } else {
+        credentialsWaSection = `\n\n🔑 *YOUR CLIENT PORTAL LOGIN:*\n🌐 *Portal Link:* ${portalUrl}\n👤 *Username:* ${lead.email}\n🔑 *Password:* Use your existing registered password\n\n⚠️ *Note:* You can log in to your Client Portal to track your translation progress and download your official certified PDF as soon as it is ready.`;
+      }
+
+      const waMessage = `Hello *${clientName}*,\n\nYour payment of *€${Number(totalPaid).toFixed(2)}* for *Spanish Sworn Translation (Traducción Jurada Oficial)* has been successfully received. 🎉\n\nThank you for your payment. We have recorded your payment and our certified sworn translators will now proceed with the translation of your document(s).\n\n📋 *Payment Reference:* ${paymentReference}\n📅 *Payment Date:* ${paymentDateFormatted}\n📑 *Words:* ${wordCount}\n🌐 *Language:* ${sourceLang} ➔ ${targetLang}${credentialsWaSection}\n\nYour official certified sworn translation with ministry certification stamps will also be delivered to your registered email (*${lead.email}*) within max 7 working days.\n\nThank you for choosing AAA Business Consultancy! 🇪🇸`;
 
       try {
         await sendCustomWhatsApp(clientPhone, waMessage);
@@ -361,6 +402,11 @@ async function handleSwornTranslationPaymentSuccess({ leadId, session, reqApp = 
           .badge { display: inline-block; background: rgba(16, 185, 129, 0.15); border: 1px solid #10b981; color: #10b981; font-weight: 700; padding: 6px 14px; border-radius: 20px; font-size: 12px; margin-bottom: 12px; }
           .content { padding: 32px 24px; }
           .summary-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; margin: 20px 0; }
+          .creds-card { background: #f0fdf4; border: 1.5px solid #86efac; border-radius: 12px; padding: 20px; margin: 20px 0; }
+          .creds-table { width: 100%; border-collapse: collapse; background: #ffffff; border: 1px solid #bbf7d0; border-radius: 8px; margin: 12px 0 16px 0; overflow: hidden; }
+          .creds-table td { padding: 10px 14px; font-size: 13px; }
+          .creds-table tr:not(:last-child) td { border-bottom: 1px solid #f1f5f9; }
+          .btn-login { display: inline-block; background: #051A3B; color: #ffffff !important; font-weight: 700; font-size: 13px; padding: 12px 24px; border-radius: 8px; text-decoration: none; }
           .row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f1f5f9; font-size: 14px; }
           .row:last-child { border-bottom: none; }
           .label { color: #64748b; font-weight: 500; }
@@ -409,9 +455,40 @@ async function handleSwornTranslationPaymentSuccess({ leadId, session, reqApp = 
               </div>
             </div>
 
+            <!-- Credentials Box -->
+            <div class="creds-card">
+              <h3 style="margin: 0 0 8px 0; color: #166534; font-size: 16px; font-weight: 800;">
+                🔑 Your Client Portal Login Credentials
+              </h3>
+              <p style="margin: 0 0 12px 0; font-size: 13px; color: #15803d; line-height: 1.5;">
+                You can log in to your secure Client Portal dashboard to track translation progress and download your completed certified PDF files directly.
+              </p>
+              <table class="creds-table">
+                <tr>
+                  <td style="color: #64748b; font-weight: 600; width: 38%;">Portal Link:</td>
+                  <td style="font-weight: 700;"><a href="${portalUrl}" style="color: #051A3B; text-decoration: underline;">${portalUrl}</a></td>
+                </tr>
+                <tr>
+                  <td style="color: #64748b; font-weight: 600;">Username:</td>
+                  <td style="font-weight: 700; color: #0F172A; font-family: monospace;">${clientEmail}</td>
+                </tr>
+                <tr>
+                  <td style="color: #64748b; font-weight: 600;">Password:</td>
+                  <td style="font-weight: 700;">
+                    ${plainTempPassword ? `<code style="background: #dcfce7; color: #166534; padding: 4px 10px; border-radius: 4px; font-size: 14px; font-weight: 800; letter-spacing: 1px;">${plainTempPassword}</code>` : `<span style="color: #0F172A;">Your existing registered password</span>`}
+                  </td>
+                </tr>
+              </table>
+              <div style="text-align: center;">
+                <a href="${portalUrl}" class="btn-login">
+                  Access Client Portal →
+                </a>
+              </div>
+            </div>
+
             <div class="timeline-card">
               <strong>🚀 What happens next?</strong><br>
-              Our certified sworn translators (registered with the Spanish Ministry of Foreign Affairs) have started processing your documents. The finalized translation with official ministry stamps will be delivered directly to your email within <strong>max 7 working days</strong>.
+              Our certified sworn translators (registered with the Spanish Ministry of Foreign Affairs) have started processing your documents. The finalized translation with official ministry stamps will be uploaded to your portal and delivered to your email within <strong>max 7 working days</strong>.
             </div>
 
             <p style="font-size: 13px; color: #64748b; line-height: 1.5;">
