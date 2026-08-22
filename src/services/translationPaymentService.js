@@ -88,7 +88,9 @@ async function handleSwornTranslationPaymentSuccess({ leadId, session, reqApp = 
   const sourceLang = lead.sourceLanguage || lead.qualificationData?.sourceLanguage || 'English';
   const targetLang = lead.targetLanguage || lead.qualificationData?.targetLanguage || 'Spanish';
   const documentsList = Array.isArray(lead.qualificationData?.documents) ? lead.qualificationData.documents : [];
-  const paymentReference = `TRN-${sessionId.substring(sessionId.length - 8).toUpperCase()}`;
+  const paymentReference = sessionId.startsWith('MANUAL-')
+    ? `TRN-MAN-${lead.id.substring(0, 6).toUpperCase()}`
+    : `TRN-${sessionId.substring(sessionId.length - 8).toUpperCase()}`;
   const frontendUrl = (process.env.FRONTEND_URL || 'https://aaa-crm-service.netlify.app').replace(/\/$/, '');
 
   // 2. Strong Idempotency: Find or Create Client and Payment records in DB
@@ -178,7 +180,7 @@ async function handleSwornTranslationPaymentSuccess({ leadId, session, reqApp = 
           discount: 0,
           totalPaid: totalPaid,
           status: 'Paid',
-          paymentMethod: 'Stripe',
+          paymentMethod: sessionId.startsWith('MANUAL-') ? 'Manual / Admin' : 'Stripe',
           transactionId: sessionId,
           gatewayId: sessionId,
           invoiceNumber: paymentReference,

@@ -480,6 +480,48 @@ const updateLeadStatus = async (req, res) => {
       }
     }
 
+    if (status === 'Payment Completed') {
+      try {
+        const fullLead = await prisma.lead.findUnique({
+          where: { id: leadId }
+        });
+
+        const isTranslation = fullLead && (
+          (fullLead.serviceType || '').toLowerCase().includes('translation') || 
+          (fullLead.serviceType || '').toLowerCase().includes('sworn') || 
+          (fullLead.serviceId || '').toLowerCase().includes('translation') ||
+          (fullLead.serviceId || '').toLowerCase().includes('sworn')
+        );
+
+        if (isTranslation) {
+          const { handleSwornTranslationPaymentSuccess } = require('../services/translationPaymentService');
+          const manualSessionId = `MANUAL-TRN-${fullLead.id.substring(0, 8).toUpperCase()}`;
+          const quotedPrice = Number(fullLead.qualificationData?.estimatedPrice) || 15;
+          const manualSession = {
+            id: manualSessionId,
+            amount_total: Math.round(quotedPrice * 100),
+            customer_email: fullLead.email,
+            customer_details: { email: fullLead.email, name: `${fullLead.firstName} ${fullLead.lastName}` },
+            metadata: {
+              leadId: fullLead.id,
+              serviceType: 'Spanish Sworn Translation',
+              wordCount: String(fullLead.wordCount || fullLead.qualificationData?.wordCount || 0),
+              amount: String(quotedPrice)
+            }
+          };
+
+          await handleSwornTranslationPaymentSuccess({
+            leadId: fullLead.id,
+            session: manualSession,
+            reqApp: req.app
+          });
+          console.log(`[updateLeadStatus] ✅ Successfully processed manual Payment Completed credentials for Sworn Translation lead ${fullLead.id}`);
+        }
+      } catch (trnPayErr) {
+        console.error('[updateLeadStatus] Error in translation manual payment completion trigger:', trnPayErr.message);
+      }
+    }
+
     if (status === 'No Show' || status === 'No-Show') {
       try {
         await prisma.blacklistedClient.upsert({
