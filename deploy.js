@@ -172,21 +172,38 @@ async function ensurePhase2Schema() {
       console.log(`[Deploy] Column \`relocation_packages.${col.name}\`: OK`);
     }
   }
+
+  // 6. Ensure leads table columns exist
+  const leadCols = [
+    { name: 'caseComments', sql: 'ALTER TABLE `leads` ADD COLUMN `caseComments` JSON NULL;' }
+  ];
+
+  for (const col of leadCols) {
+    const exists = await columnExists('leads', col.name);
+    if (!exists) {
+      console.log(`[Deploy] Adding column \`leads.${col.name}\`...`);
+      try {
+        await prisma.$executeRawUnsafe(col.sql);
+        console.log(`[Deploy] Column \`leads.${col.name}\` added.`);
+      } catch (err) {
+        console.log(`[Deploy] Note on \`leads.${col.name}\`: ${err.message}`);
+      }
+    } else {
+      console.log(`[Deploy] Column \`leads.${col.name}\`: OK`);
+    }
+  }
 }
 
 async function main() {
   console.log('[Deploy] ===== AAA Backend Startup =====');
-  console.log('[Deploy] Launching Express server (src/app)...');
-  require('./src/app');
-
   try {
     await ensurePhase2Schema();
-    console.log('[Deploy] All Phase 2 database schema checks complete.');
+    console.log('[Deploy] All database schema checks complete.');
   } catch (err) {
     console.error('[Deploy] Database check warning:', err.message);
-  } finally {
-    await prisma.$disconnect();
   }
+  console.log('[Deploy] Launching Express server (src/app)...');
+  require('./src/app');
 }
 
 main();
