@@ -162,7 +162,7 @@ const uploadDocument = async (req, res) => {
 
     if (client) {
       const clientName = `${client.firstName} ${client.lastName}`;
-      const fileNameLower = (req.file.originalname || '').toLowerCase();
+      const fileNameLower = (file.originalname || '').toLowerCase();
       const isTranslationDoc = (category || '').toLowerCase().includes('translation') || fileNameLower.includes('translation') || fileNameLower.includes('sworn');
 
       // Check if uploaded by staff/agent for the client -> Send client email notification
@@ -174,7 +174,7 @@ const uploadDocument = async (req, res) => {
             subject: `[COMPLETED] Your Official Sworn Translation is Ready! 📜`,
             html: `
               <h3>Hello ${clientName},</h3>
-              <p>Great news! Your official Spanish Sworn Translation document <b>${req.file.originalname}</b> has been completed and uploaded by our operations team.</p>
+              <p>Great news! Your official Spanish Sworn Translation document <b>${file.originalname}</b> has been completed and uploaded by our operations team.</p>
               <p>It is now available for direct download on your <b>Client Portal</b> under your documents section.</p>
               <br/>
               <p>Best regards,<br/><b>AAA Immigration Services LLC</b></p>
@@ -242,7 +242,7 @@ const uploadDocument = async (req, res) => {
         clientName,
         clientId,
         documentId: document.id,
-        documentName: req.file.originalname,
+        documentName: file.originalname,
         category: category || 'General',
         reqApp: req.app
       });
