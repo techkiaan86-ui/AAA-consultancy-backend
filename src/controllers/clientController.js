@@ -23,27 +23,70 @@ const getClients = async (req, res) => {
 
     const idList = clientIds.map(c => c.id);
 
-    // 2. Fetch full client objects by primary key list (zero SQL sort memory overhead)
+    // 2. Fetch full client objects by primary key list
     let clients = [];
     try {
       clients = await prisma.client.findMany({
         where: { id: { in: idList } },
         include: {
           assignedTo: { select: { fullName: true } },
-          applicationCycles: true
+          applicationCycles: true,
+          documents: true,
+          lead: {
+            select: {
+              id: true,
+              clientCode: true,
+              qualificationData: true
+            }
+          }
         }
       });
     } catch (dbErr) {
-      console.warn('[getClients Warning] Retrying query without applicationCycles relation:', dbErr.message);
+      console.warn('[getClients Warning] Retrying query with lead relation:', dbErr.message);
       clients = await prisma.client.findMany({
         where: { id: { in: idList } },
         include: {
-          assignedTo: { select: { fullName: true } }
+          assignedTo: { select: { fullName: true } },
+          documents: true,
+          lead: {
+            select: {
+              id: true,
+              clientCode: true,
+              qualificationData: true
+            }
+          }
         }
       });
     }
 
-    // 3. Preserve exact createdAt desc order
+    // 3. Auto-sync missing document rows from lead qualificationData to Document table
+    for (const c of clients) {
+      try {
+        const leadObj = c.lead;
+        const qualDocs = Array.isArray(leadObj?.qualificationData?.documents) ? leadObj.qualificationData.documents : [];
+        if (qualDocs.length > 0) {
+          for (const qd of qualDocs) {
+            const exists = (c.documents || []).some(d => d.name === qd.name);
+            if (!exists && qd.name) {
+              await prisma.document.create({
+                data: {
+                  clientId: c.id,
+                  name: qd.name || 'Translation Document.pdf',
+                  fileUrl: qd.url || qd.fileUrl || '',
+                  category: qd.category || 'Sworn Translation',
+                  status: 'Pending',
+                  notes: `Source: ${qd.sourceLanguage || qd.documentLanguage || 'English'} ➔ Target: ${qd.targetLanguage || 'Spanish'} | Words: ${qd.wordCount || 0}`
+                }
+              }).catch(dErr => console.warn('[AutoDocSync Warn]:', dErr.message));
+            }
+          }
+        }
+      } catch (syncErr) {
+        console.warn('[AutoDocSync Error]:', syncErr.message);
+      }
+    }
+
+    // Preserve exact createdAt desc order
     const clientMap = new Map(clients.map(c => [c.id, c]));
     const sortedClients = idList.map(id => clientMap.get(id)).filter(Boolean);
     
@@ -54,6 +97,8 @@ const getClients = async (req, res) => {
       
       return {
         ...c,
+        leadId: c.lead?.id || c.leadId,
+        qualificationData: c.lead?.qualificationData || c.qualificationData,
         onboardingDate: c.createdAt,
         assignedAt: c.assignedAt || c.createdAt,
         name: `${c.firstName} ${c.lastName}`,

@@ -948,6 +948,34 @@ exports.checkoutTranslationDocument = async (req, res) => {
       });
     }
 
+    // Auto-sync documents to Document DB table if client already exists for this email/phone
+    try {
+      const existingClient = await prisma.client.findFirst({
+        where: { OR: [{ email: email.toLowerCase() }, { phone: String(phone).trim() }] }
+      });
+      if (existingClient && finalDocumentsList.length > 0) {
+        for (const docItem of finalDocumentsList) {
+          const docExist = await prisma.document.findFirst({
+            where: { clientId: existingClient.id, name: docItem.name || 'Translation Document.pdf' }
+          });
+          if (!docExist) {
+            await prisma.document.create({
+              data: {
+                clientId: existingClient.id,
+                name: docItem.name || 'Translation Document.pdf',
+                fileUrl: docItem.url || '',
+                category: docItem.category || 'Sworn Translation',
+                status: 'Pending',
+                notes: `Source: ${docItem.sourceLanguage || 'English'} ➔ Target: ${docItem.targetLanguage || 'Spanish'} | Words: ${docItem.wordCount || 0}`
+              }
+            }).catch(e => console.warn('[CheckoutDocSync Warn]:', e.message));
+          }
+        }
+      }
+    } catch (clientSyncErr) {
+      console.warn('[CheckoutClientSync Warning]:', clientSyncErr.message);
+    }
+
     const frontendUrl = process.env.FRONTEND_URL || req.headers.origin || 'http://localhost:5173';
     let paymentUrl = `${frontendUrl}/#/public/translation?success=true&leadId=${lead.id}`;
     let stripeSessionId = null;
