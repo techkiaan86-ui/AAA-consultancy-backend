@@ -60,7 +60,8 @@ const autoCategorizeDocument = (fileName) => {
 
 const uploadDocument = async (req, res) => {
   try {
-    if (!req.file) {
+    const file = req.file || (req.files && req.files.length > 0 ? req.files[0] : null);
+    if (!file) {
       return res.status(400).json({ message: 'No file uploaded' });
     }
     
@@ -69,17 +70,17 @@ const uploadDocument = async (req, res) => {
     
     // Auto-categorize if category is missing or generic
     if (!category || category === 'General') {
-      category = autoCategorizeDocument(req.file.originalname);
+      category = autoCategorizeDocument(file.originalname);
     }
     
     // Extract word count for PDF files
     let wordCount = 0;
-    const isPdf = (req.file.originalname || '').toLowerCase().endsWith('.pdf') || req.file.mimetype === 'application/pdf';
-    if (isPdf && req.file.path) {
+    const isPdf = (file.originalname || '').toLowerCase().endsWith('.pdf') || file.mimetype === 'application/pdf';
+    if (isPdf && file.path) {
       try {
         const fs = require('fs');
         const { extractText } = require('unpdf');
-        const dataBuffer = fs.readFileSync(req.file.path);
+        const dataBuffer = fs.readFileSync(file.path);
         const extractPromise = extractText(new Uint8Array(dataBuffer));
         const timeoutPromise = new Promise((_, reject) => 
           setTimeout(() => reject(new Error('PDF text extraction timed out (5s limit)')), 5000)
@@ -100,10 +101,10 @@ const uploadDocument = async (req, res) => {
     const document = await prisma.document.create({
       data: {
         clientId,
-        name: req.file.originalname,
+        name: file.originalname,
         category: category || 'General',
-        url: getFileUrl(req.file),
-        size: `${(req.file.size / 1024 / 1024).toFixed(2)} MB`,
+        url: getFileUrl(file),
+        size: `${(file.size / 1024 / 1024).toFixed(2)} MB`,
         status: req.body.status || 'Pending Verification',
         belongsTo: belongsTo || 'Main Applicant',
         wordCount
@@ -301,7 +302,8 @@ const reviewDocument = async (req, res) => {
 
 const uploadTranslatedDocument = async (req, res) => {
   try {
-    if (!req.file) {
+    const file = req.file || (req.files && req.files.length > 0 ? req.files[0] : null);
+    if (!file) {
       return res.status(400).json({ message: 'No file uploaded' });
     }
 
@@ -311,7 +313,7 @@ const uploadTranslatedDocument = async (req, res) => {
     const document = await prisma.document.update({
       where: { id },
       data: {
-        translatedUrl: getFileUrl(req.file),
+        translatedUrl: getFileUrl(file),
         status: 'Translated'
       },
       include: {
