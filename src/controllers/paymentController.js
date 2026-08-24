@@ -181,12 +181,14 @@ const generatePaymentLink = async (req, res) => {
           dueDate: payment.dueDate
         });
 
-        if (zohoRes && zohoRes.paymentUrl) {
-          paymentUrl = zohoRes.paymentUrl;
+        if (zohoRes) {
+          if (gateway === 'zoho' && zohoRes.paymentUrl) {
+            paymentUrl = zohoRes.paymentUrl;
+          }
           await prisma.payment.update({
             where: { id: payment.id },
             data: { 
-              gatewayId: zohoRes.invoiceId,
+              ...(gateway === 'zoho' ? { gatewayId: zohoRes.invoiceId } : {}),
               invoiceNumber: zohoRes.invoiceNumber || `INV-2026-${payment.id.replace(/-/g, '').slice(0, 8).toUpperCase()}`
             }
           });
