@@ -57,25 +57,48 @@ const getClients = async (req, res) => {
       });
     }
 
-    // 3. Auto-sync missing document rows from lead qualificationData to Document table
+    // 3. Auto-link unlinked leads and auto-sync missing document rows from lead qualificationData to Document table
     for (const c of clients) {
       try {
-        const leadObj = c.lead;
+        let leadObj = c.lead;
+        if (!leadObj && c.email) {
+          leadObj = await prisma.lead.findFirst({
+            where: {
+              OR: [
+                { email: c.email.toLowerCase() },
+                ...(c.phone && c.phone !== '-' ? [{ phone: c.phone }] : [])
+              ]
+            }
+          });
+          if (leadObj && !leadObj.clientId) {
+            await prisma.lead.update({
+              where: { id: leadObj.id },
+              data: { clientId: c.id }
+            }).catch(lErr => console.warn('[LeadLink Warn]:', lErr.message));
+          }
+        }
+        c.lead = leadObj;
+
         const qualDocs = Array.isArray(leadObj?.qualificationData?.documents) ? leadObj.qualificationData.documents : [];
         if (qualDocs.length > 0) {
           for (const qd of qualDocs) {
-            const exists = (c.documents || []).some(d => d.name === qd.name);
-            if (!exists && qd.name) {
-              await prisma.document.create({
+            const docName = qd.name || qd.filename || 'Translation Document.pdf';
+            const exists = (c.documents || []).some(d => d.name === docName);
+            if (!exists) {
+              const createdDoc = await prisma.document.create({
                 data: {
                   clientId: c.id,
-                  name: qd.name || 'Translation Document.pdf',
+                  name: docName,
                   fileUrl: qd.url || qd.fileUrl || '',
                   category: qd.category || 'Sworn Translation',
                   status: 'Pending',
                   notes: `Source: ${qd.sourceLanguage || qd.documentLanguage || 'English'} ➔ Target: ${qd.targetLanguage || 'Spanish'} | Words: ${qd.wordCount || 0}`
                 }
               }).catch(dErr => console.warn('[AutoDocSync Warn]:', dErr.message));
+              if (createdDoc) {
+                if (!c.documents) c.documents = [];
+                c.documents.push(createdDoc);
+              }
             }
           }
         }
