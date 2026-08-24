@@ -35,7 +35,6 @@ const getClients = async (req, res) => {
           lead: {
             select: {
               id: true,
-              clientCode: true,
               qualificationData: true
             }
           }
@@ -51,7 +50,6 @@ const getClients = async (req, res) => {
           lead: {
             select: {
               id: true,
-              clientCode: true,
               qualificationData: true
             }
           }
