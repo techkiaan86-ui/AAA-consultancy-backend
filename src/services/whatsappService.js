@@ -105,7 +105,8 @@ exports.sendWhatsAppMessage = async ({ to, templateName, contentSid: customConte
     // If these are missing in Twilio, Twilio will reject the fallback text outside 24h window
     meeting_cancelled: process.env.TWILIO_TEMPLATE_MEETING_CANCELLED || null,
     meeting_booked: process.env.TWILIO_TEMPLATE_MEETING_BOOKED || null,
-    meeting_rescheduled: process.env.TWILIO_TEMPLATE_MEETING_RESCHEDULED || null
+    meeting_rescheduled: process.env.TWILIO_TEMPLATE_MEETING_RESCHEDULED || null,
+    translation_ready: process.env.TWILIO_TEMPLATE_TRANSLATION_READY || null
   };
 
   if (isConfigured) {
@@ -182,7 +183,20 @@ Your Free Spain Visa Eligibility Assessment has been rescheduled successfully!
 🔗 *Meeting Join Link:* {{4}}
 
 ─────────────
-*AAA Business Consultancy*`
+*AAA Business Consultancy*`,
+          translation_ready: `📜 *Certified Sworn Translation Ready!* 🇪🇸
+
+Dear *{{1}}*,
+
+We are pleased to inform you that the official sworn translation for *{{2}}* is complete and ready. 🎉
+
+You can now view and download your certified stamped document directly from your Client Portal:
+
+🔗 *Download Translation:* {{3}}
+
+─────────────
+*AAA Business Consultancy*
+_Official Spanish Ministry Certified Translation Services_`
         };
         templateText = fallbacks[templateName] || `Template: ${templateName}`;
       }
