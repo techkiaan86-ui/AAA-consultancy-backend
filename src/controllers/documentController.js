@@ -320,22 +320,71 @@ const uploadTranslatedDocument = async (req, res) => {
     });
 
     // 2. Trigger email to client notifying them that translation is ready
+    const frontendBase = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const clientName = document.client ? `${document.client.firstName || ''} ${document.client.lastName || ''}`.trim() : 'Client';
+    const portalUrl = `${frontendBase}/#/portal/documents/${document.clientId}`;
+
     if (document.client && document.client.email) {
       const { sendEmail } = require('../services/emailService');
       sendEmail({
         to: document.client.email,
         subject: 'Your Certified Sworn Translation is Ready! 🇪🇸',
         html: `
-          <h3>Dear ${document.client.firstName},</h3>
+          <h3>Dear ${document.client.firstName || 'Client'},</h3>
           <p>We are pleased to inform you that the sworn translation of your document (<b>${document.name}</b>) is complete and ready.</p>
           <p>You can now download the certified PDF directly from your Client Portal dashboard.</p>
-          <p><a href="${process.env.FRONTEND_URL || 'http://localhost:5173'}/#/portal/login">Log in to Client Portal</a></p>
+          <p><a href="${portalUrl}" style="display:inline-block;padding:10px 18px;background:#16a34a;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:bold;">Log in to Client Portal</a></p>
           <br/>
           <p>Best regards,<br/>AAA Business Consultancy Team</p>
         `
       }).catch((emailErr) => {
         console.error('Failed to send email notification:', emailErr);
       });
+    }
+
+    // 3. Trigger WhatsApp notification to client if phone is available
+    if (document.client && document.client.phone) {
+      try {
+        const { sendWhatsAppMessage } = require('../services/whatsappService');
+        sendWhatsAppMessage({
+          to: document.client.phone,
+          templateName: 'translation_ready',
+          components: [
+            {
+              type: 'body',
+              parameters: [
+                { type: 'text', text: document.client.firstName || 'Client' },
+                { type: 'text', text: document.name || 'Document' },
+                { type: 'text', text: portalUrl }
+              ]
+            }
+          ]
+        }).catch((waErr) => {
+          console.warn('[WhatsApp] Could not send translation ready notification:', waErr.message);
+        });
+      } catch (waEx) {
+        console.warn('[WhatsApp Exception]:', waEx.message);
+      }
+    }
+
+    // 4. Record Communication Log
+    if (document.client) {
+      try {
+        await prisma.communicationLog.create({
+          data: {
+            clientId: document.clientId,
+            phone: document.client.phone || null,
+            name: clientName,
+            channel: 'EMAIL',
+            direction: 'OUTBOUND',
+            externalProviderId: 'translation_ready',
+            deliveryStatus: 'SENT',
+            content: `Certified Sworn Translation ready for "${document.name}". Notification sent asking client to check portal at ${portalUrl}.`
+          }
+        });
+      } catch (logErr) {
+        console.warn('[CommLog] Error saving communication log:', logErr.message);
+      }
     }
 
     res.json({ success: true, document });
