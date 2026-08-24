@@ -308,47 +308,63 @@ const uploadTranslatedDocument = async (req, res) => {
     }
 
     const { id } = req.params;
+    let clientId = req.body.clientId || req.query.clientId;
+    if (!clientId && (id.startsWith('qual_') || id.includes('_'))) {
+      const parts = id.split('_');
+      clientId = parts[parts.length - 1];
+    }
 
-    let document;
-    if (id.startsWith('qual_') || id.includes('_')) {
-      const clientId = req.body.clientId || req.query.clientId || id.split('_').pop();
+    let document = null;
+
+    // 1. First try finding document by primary key id
+    if (id && !id.startsWith('qual_')) {
+      document = await prisma.document.findUnique({
+        where: { id },
+        include: { client: true }
+      }).catch(() => null);
+    }
+
+    // 2. Second try finding document by clientId + name
+    if (!document && clientId) {
       const docName = req.body.name || 'Sworn Translation Document.pdf';
-      document = await prisma.document.create({
-        data: {
+      document = await prisma.document.findFirst({
+        where: {
           clientId,
-          name: docName,
-          fileUrl: req.body.fileUrl || '',
-          category: 'Sworn Translation',
-          translatedUrl: getFileUrl(file),
+          OR: [
+            { name: docName },
+            { category: 'Sworn Translation' }
+          ]
+        },
+        include: { client: true }
+      }).catch(() => null);
+    }
+
+    const fileUrl = getFileUrl(file);
+
+    if (document) {
+      // Update existing document
+      document = await prisma.document.update({
+        where: { id: document.id },
+        data: {
+          translatedUrl: fileUrl,
           status: 'Translated'
         },
         include: { client: true }
       });
     } else {
-      try {
-        document = await prisma.document.update({
-          where: { id },
-          data: {
-            translatedUrl: getFileUrl(file),
-            status: 'Translated'
-          },
-          include: { client: true }
-        });
-      } catch (notFoundErr) {
-        const clientId = req.body.clientId || req.query.clientId;
-        const docName = req.body.name || 'Sworn Translation Document.pdf';
-        document = await prisma.document.create({
-          data: {
-            clientId,
-            name: docName,
-            fileUrl: req.body.fileUrl || '',
-            category: 'Sworn Translation',
-            translatedUrl: getFileUrl(file),
-            status: 'Translated'
-          },
-          include: { client: true }
-        });
-      }
+      // Create new document row safely
+      const docName = req.body.name || 'Sworn Translation Document.pdf';
+      document = await prisma.document.create({
+        data: {
+          clientId: clientId || null,
+          name: docName,
+          fileUrl: req.body.fileUrl || '',
+          category: 'Sworn Translation',
+          translatedUrl: fileUrl,
+          status: 'Translated'
+        },
+        include: { client: true }
+      });
     }
 
     // 2. Trigger email to client notifying them that translation is ready
