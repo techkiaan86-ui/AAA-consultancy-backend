@@ -309,136 +309,104 @@ const uploadTranslatedDocument = async (req, res) => {
 
     const { id } = req.params;
     let clientId = req.body.clientId || req.query.clientId;
-    if (!clientId && (id.startsWith('qual_') || id.includes('_'))) {
+    if (!clientId && id) {
+      const uuidMatch = id.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+      if (uuidMatch) {
+        clientId = uuidMatch[0];
+      }
+    }
+
+    if (!clientId && !id.startsWith('qual_')) {
+      const existingById = await prisma.document.findUnique({ where: { id } }).catch(() => null);
+      if (existingById) clientId = existingById.clientId;
+    }
+
+    if (!clientId) {
+      return res.status(400).json({ message: 'Invalid client reference for document upload' });
+    }
+
+    let clientObj = await prisma.client.findUnique({
+      where: { id: clientId },
+      include: { lead: true, documents: true }
+    });
+
+    if (!clientObj) {
+      return res.status(404).json({ message: 'Client not found for document upload' });
+    }
+
+    let targetDoc = null;
+    let docIndex = 0;
+    if (id.startsWith('qual_')) {
       const parts = id.split('_');
-      clientId = parts[parts.length - 1];
+      if (parts.length >= 2 && !isNaN(parseInt(parts[1], 10))) {
+        docIndex = parseInt(parts[1], 10);
+      }
     }
 
-    let document = null;
-
-    // 1. First try finding document by primary key id
-    if (id && !id.startsWith('qual_')) {
-      document = await prisma.document.findUnique({
-        where: { id },
-        include: { client: true }
-      }).catch(() => null);
+    const existingDocs = clientObj.documents || [];
+    if (existingDocs.length > docIndex) {
+      targetDoc = existingDocs[docIndex];
+    } else if (existingDocs.length > 0) {
+      targetDoc = existingDocs[0];
     }
 
-    // 2. Second try finding document by clientId + name
-    if (!document && clientId) {
-      const docName = req.body.name || 'Sworn Translation Document.pdf';
-      document = await prisma.document.findFirst({
-        where: {
-          clientId,
-          OR: [
-            { name: docName },
-            { category: 'Sworn Translation' }
-          ]
-        },
-        include: { client: true }
-      }).catch(() => null);
-    }
+    const qualDocs = Array.isArray(clientObj.lead?.qualificationData?.documents)
+      ? clientObj.lead.qualificationData.documents
+      : (Array.isArray(clientObj.qualificationData?.documents) ? clientObj.qualificationData.documents : []);
+    const qualDoc = qualDocs[docIndex] || qualDocs[0] || {};
+    const docName = req.body.name || targetDoc?.name || qualDoc.name || qualDoc.filename || `Translation Document ${docIndex + 1}.pdf`;
+    const docFileUrl = targetDoc?.fileUrl || qualDoc.url || qualDoc.fileUrl || '';
 
-    const fileUrl = getFileUrl(file);
+    const uploadedFileUrl = getFileUrl(file);
 
-    if (document) {
-      // Update existing document
-      document = await prisma.document.update({
-        where: { id: document.id },
+    if (targetDoc && targetDoc.id) {
+      targetDoc = await prisma.document.update({
+        where: { id: targetDoc.id },
         data: {
-          translatedUrl: fileUrl,
+          translatedUrl: uploadedFileUrl,
           status: 'Translated'
         },
         include: { client: true }
       });
     } else {
-      // Create new document row safely
-      const docName = req.body.name || 'Sworn Translation Document.pdf';
-      document = await prisma.document.create({
+      targetDoc = await prisma.document.create({
         data: {
-          clientId: clientId || null,
+          clientId,
           name: docName,
-          fileUrl: req.body.fileUrl || '',
+          fileUrl: docFileUrl,
           category: 'Sworn Translation',
-          translatedUrl: fileUrl,
+          translatedUrl: uploadedFileUrl,
           status: 'Translated'
         },
         include: { client: true }
       });
     }
 
-    // 2. Trigger email to client notifying them that translation is ready
     const frontendBase = process.env.FRONTEND_URL || 'http://localhost:5173';
-    const clientName = document.client ? `${document.client.firstName || ''} ${document.client.lastName || ''}`.trim() : 'Client';
-    const portalUrl = `${frontendBase}/#/portal/documents/${document.clientId}`;
+    const portalUrl = `${frontendBase}/#/portal/documents/${clientId}`;
 
-    if (document.client && document.client.email) {
+    if (clientObj.email) {
       const { sendEmail } = require('../services/emailService');
       sendEmail({
-        to: document.client.email,
+        to: clientObj.email,
         subject: 'Your Certified Sworn Translation is Ready! 🇪🇸',
         html: `
-          <h3>Dear ${document.client.firstName || 'Client'},</h3>
-          <p>We are pleased to inform you that the sworn translation of your document (<b>${document.name}</b>) is complete and ready.</p>
+          <h3>Dear ${clientObj.firstName || 'Client'},</h3>
+          <p>We are pleased to inform you that the sworn translation of your document (<b>${targetDoc.name}</b>) is complete and ready.</p>
           <p>You can now download the certified PDF directly from your Client Portal dashboard.</p>
           <p><a href="${portalUrl}" style="display:inline-block;padding:10px 18px;background:#16a34a;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:bold;">Log in to Client Portal</a></p>
           <br/>
           <p>Best regards,<br/>AAA Business Consultancy Team</p>
         `
       }).catch((emailErr) => {
-        console.error('Failed to send email notification:', emailErr);
+        console.error('Failed to send email notification:', emailErr.message);
       });
     }
 
-    // 3. Trigger WhatsApp notification to client if phone is available
-    if (document.client && document.client.phone) {
-      try {
-        const { sendWhatsAppMessage } = require('../services/whatsappService');
-        sendWhatsAppMessage({
-          to: document.client.phone,
-          templateName: 'translation_ready',
-          components: [
-            {
-              type: 'body',
-              parameters: [
-                { type: 'text', text: document.client.firstName || 'Client' },
-                { type: 'text', text: document.name || 'Document' },
-                { type: 'text', text: portalUrl }
-              ]
-            }
-          ]
-        }).catch((waErr) => {
-          console.warn('[WhatsApp] Could not send translation ready notification:', waErr.message);
-        });
-      } catch (waEx) {
-        console.warn('[WhatsApp Exception]:', waEx.message);
-      }
-    }
-
-    // 4. Record Communication Log
-    if (document.client) {
-      try {
-        await prisma.communicationLog.create({
-          data: {
-            clientId: document.clientId,
-            phone: document.client.phone || null,
-            name: clientName,
-            channel: 'EMAIL',
-            direction: 'OUTBOUND',
-            externalProviderId: 'translation_ready',
-            deliveryStatus: 'SENT',
-            content: `Certified Sworn Translation ready for "${document.name}". Notification sent asking client to check portal at ${portalUrl}.`
-          }
-        });
-      } catch (logErr) {
-        console.warn('[CommLog] Error saving communication log:', logErr.message);
-      }
-    }
-
-    res.json({ success: true, document });
+    res.json({ success: true, document: targetDoc });
   } catch (error) {
     console.error('Error uploading translated document:', error);
-    res.status(500).json({ message: 'Server error uploading translated document' });
+    res.status(500).json({ message: 'Server error uploading translated document', error: error.message });
   }
 };
 
