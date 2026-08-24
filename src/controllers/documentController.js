@@ -309,17 +309,47 @@ const uploadTranslatedDocument = async (req, res) => {
 
     const { id } = req.params;
 
-    // 1. Update the document with translated url and status
-    const document = await prisma.document.update({
-      where: { id },
-      data: {
-        translatedUrl: getFileUrl(file),
-        status: 'Translated'
-      },
-      include: {
-        client: true
+    let document;
+    if (id.startsWith('qual_') || id.includes('_')) {
+      const clientId = req.body.clientId || req.query.clientId || id.split('_').pop();
+      const docName = req.body.name || 'Sworn Translation Document.pdf';
+      document = await prisma.document.create({
+        data: {
+          clientId,
+          name: docName,
+          fileUrl: req.body.fileUrl || '',
+          category: 'Sworn Translation',
+          translatedUrl: getFileUrl(file),
+          status: 'Translated'
+        },
+        include: { client: true }
+      });
+    } else {
+      try {
+        document = await prisma.document.update({
+          where: { id },
+          data: {
+            translatedUrl: getFileUrl(file),
+            status: 'Translated'
+          },
+          include: { client: true }
+        });
+      } catch (notFoundErr) {
+        const clientId = req.body.clientId || req.query.clientId;
+        const docName = req.body.name || 'Sworn Translation Document.pdf';
+        document = await prisma.document.create({
+          data: {
+            clientId,
+            name: docName,
+            fileUrl: req.body.fileUrl || '',
+            category: 'Sworn Translation',
+            translatedUrl: getFileUrl(file),
+            status: 'Translated'
+          },
+          include: { client: true }
+        });
       }
-    });
+    }
 
     // 2. Trigger email to client notifying them that translation is ready
     const frontendBase = process.env.FRONTEND_URL || 'http://localhost:5173';
