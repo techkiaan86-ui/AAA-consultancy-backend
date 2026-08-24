@@ -85,28 +85,35 @@ const generatePaymentLink = async (req, res) => {
     // 1. Stripe Live Checkout Session Generator
     if (stripe && (gateway === 'stripe' || !gateway)) {
       try {
-        const clientRec = await prisma.client.findUnique({ where: { id: clientId }, select: { clientCode: true } }).catch(() => null);
+        const clientRec = await prisma.client.findUnique({ where: { id: clientId }, select: { clientCode: true, firstName: true, lastName: true } }).catch(() => null);
         const cidDisplay = clientRec?.clientCode || clientId;
+        const itemName = req.body.packageName || (req.body.serviceType ? `${req.body.serviceType} (Add-on Document)` : 'Spain Relocation Legal & Consulting Package');
+        const itemDesc = `Payment for Customer: ${clientRec ? `${clientRec.firstName} ${clientRec.lastName}` : cidDisplay}${req.body.wordCount ? ` (${req.body.wordCount} words)` : ''}`;
+        const isTranslation = (req.body.serviceType || '').toLowerCase().includes('translation') || itemName.toLowerCase().includes('translation');
+
         const session = await stripe.checkout.sessions.create({
           payment_method_types: ['card'],
           line_items: [{
             price_data: {
               currency: 'eur',
               product_data: {
-                name: 'Spain Relocation Legal & Consulting Package',
-                description: `Payment for Customer ID: ${cidDisplay}`
+                name: itemName,
+                description: itemDesc
               },
               unit_amount: Math.round(finalAmount * 100) // in cents
             },
             quantity: 1
           }],
           mode: 'payment',
-          success_url: `${frontendUrl}/#/portal/login?payment=success&id=${payment.id}&session_id={CHECKOUT_SESSION_ID}`,
+          success_url: isTranslation 
+            ? `${frontendUrl}/#/public/payment-success?session_id={CHECKOUT_SESSION_ID}&type=translation&clientId=${clientId}`
+            : `${frontendUrl}/#/portal/login?payment=success&id=${payment.id}&session_id={CHECKOUT_SESSION_ID}`,
           cancel_url: `${frontendUrl}/#/portal/documents/${clientId}?cancelled=true`,
           client_reference_id: payment.id,
           metadata: {
             paymentId: payment.id,
-            clientId
+            clientId,
+            type: isTranslation ? 'translation' : 'package_payment'
           }
         });
 
