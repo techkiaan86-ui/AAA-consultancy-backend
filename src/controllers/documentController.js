@@ -336,18 +336,23 @@ const uploadTranslatedDocument = async (req, res) => {
 
     let targetDoc = null;
     let docIndex = 0;
-    if (id.startsWith('qual_')) {
+
+    if (id && !id.startsWith('qual_')) {
+      targetDoc = await prisma.document.findUnique({ where: { id } }).catch(() => null);
+    }
+
+    if (id && id.startsWith('qual_')) {
       const parts = id.split('_');
       if (parts.length >= 2 && !isNaN(parseInt(parts[1], 10))) {
         docIndex = parseInt(parts[1], 10);
       }
     }
 
-    const existingDocs = clientObj.documents || [];
-    if (existingDocs.length > docIndex) {
-      targetDoc = existingDocs[docIndex];
-    } else if (existingDocs.length > 0) {
-      targetDoc = existingDocs[0];
+    if (!targetDoc) {
+      const existingDocs = clientObj.documents || [];
+      if (existingDocs.length > docIndex) {
+        targetDoc = existingDocs[docIndex];
+      }
     }
 
     const qualDocs = Array.isArray(clientObj.lead?.qualificationData?.documents)
