@@ -308,37 +308,39 @@ const uploadTranslatedDocument = async (req, res) => {
     }
 
     const { id } = req.params;
-    let clientId = req.body.clientId || req.query.clientId;
-    if (!clientId && id) {
+    let targetDoc = null;
+    let clientId = req.body?.clientId || req.query?.clientId;
+
+    // 1. Direct fetch if id is a real document UUID
+    if (id && !id.startsWith('qual_')) {
+      targetDoc = await prisma.document.findUnique({
+        where: { id },
+        include: { client: { include: { lead: true, documents: true } } }
+      }).catch(() => null);
+      if (targetDoc) {
+        clientId = targetDoc.clientId;
+      }
+    }
+
+    // 2. Extract clientId from virtual qual_ id if not provided
+    if (!clientId && id && id.startsWith('qual_')) {
       const uuidMatch = id.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
       if (uuidMatch) {
         clientId = uuidMatch[0];
       }
     }
 
-    if (!clientId && !id.startsWith('qual_')) {
-      const existingById = await prisma.document.findUnique({ where: { id } }).catch(() => null);
-      if (existingById) clientId = existingById.clientId;
-    }
-
     if (!clientId) {
       return res.status(400).json({ message: 'Invalid client reference for document upload' });
     }
 
-    let clientObj = await prisma.client.findUnique({
+    let clientObj = targetDoc?.client || await prisma.client.findUnique({
       where: { id: clientId },
       include: { lead: true, documents: true }
     });
 
     if (!clientObj) {
       return res.status(404).json({ message: 'Client not found for document upload' });
-    }
-
-    let targetDoc = null;
-    let docIndex = 0;
-
-    if (id && !id.startsWith('qual_')) {
-      targetDoc = await prisma.document.findUnique({ where: { id } }).catch(() => null);
     }
 
     if (id && id.startsWith('qual_')) {
