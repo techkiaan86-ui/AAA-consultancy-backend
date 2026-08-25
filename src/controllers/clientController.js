@@ -80,34 +80,30 @@ const getClients = async (req, res) => {
         c.lead = leadObj;
 
         const qualDocs = Array.isArray(leadObj?.qualificationData?.documents) ? leadObj.qualificationData.documents : [];
-        if (qualDocs.length > 0) {
-          const existingDocs = c.documents || [];
+        const existingDocs = c.documents || [];
+        if (qualDocs.length > 0 && existingDocs.length === 0) {
           for (let idx = 0; idx < qualDocs.length; idx++) {
             const qd = qualDocs[idx];
             const docName = (qd.name || qd.filename || `Translation Document ${idx + 1}.pdf`).substring(0, 200);
             const docCat = qd.category || 'Sworn Translation';
-            const exists = existingDocs[idx] || existingDocs.find(d => d.name === docName && d.category === docCat);
-            if (!exists) {
-              let cleanUrl = qd.url || qd.fileUrl || '';
-              if (!cleanUrl || cleanUrl.startsWith('data:') || cleanUrl.length > 255) {
-                cleanUrl = `/uploads/qual_doc_${c.id}_${idx}.pdf`;
+            let cleanUrl = qd.url || qd.fileUrl || '';
+            if (!cleanUrl || cleanUrl.startsWith('data:') || cleanUrl.length > 255) {
+              cleanUrl = `/uploads/translation_doc_${c.id}_${idx}.pdf`;
+            }
+            const createdDoc = await prisma.document.create({
+              data: {
+                clientId: c.id,
+                name: docName,
+                url: cleanUrl,
+                category: docCat,
+                status: 'Pending',
+                wordCount: Number(qd.wordCount) || 0,
+                comment: `Source: ${qd.sourceLanguage || qd.documentLanguage || 'English'} ➔ Target: ${qd.targetLanguage || 'Spanish'} | Words: ${qd.wordCount || 0}`
               }
-              const createdDoc = await prisma.document.create({
-                data: {
-                  clientId: c.id,
-                  name: docName,
-                  url: cleanUrl,
-                  category: docCat,
-                  status: 'Pending',
-                  wordCount: Number(qd.wordCount) || 0,
-                  comment: `Source: ${qd.sourceLanguage || qd.documentLanguage || 'English'} ➔ Target: ${qd.targetLanguage || 'Spanish'} | Words: ${qd.wordCount || 0}`
-                }
-              }).catch(dErr => console.warn('[AutoDocSync Warn]:', dErr.message));
-              if (createdDoc) {
-                if (!c.documents) c.documents = [];
-                c.documents.push(createdDoc);
-                existingDocs.push(createdDoc);
-              }
+            }).catch(dErr => console.warn('[AutoDocSync Warn]:', dErr.message));
+            if (createdDoc) {
+              if (!c.documents) c.documents = [];
+              c.documents.push(createdDoc);
             }
           }
         }
