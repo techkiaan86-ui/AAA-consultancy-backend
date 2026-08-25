@@ -1,8 +1,27 @@
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
-const bcrypt = require('bcrypt');
-const { sendCustomWhatsApp } = require('./chatbotService');
-const { sendEmail } = require('./emailService');
+const fs = require('fs');
+const path = require('path');
+
+const saveBase64ToFile = (dataUri, filename) => {
+  try {
+    if (!dataUri || typeof dataUri !== 'string' || !dataUri.startsWith('data:')) return null;
+    const matches = dataUri.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+    if (!matches || matches.length !== 3) return null;
+
+    const base64Data = matches[2];
+    const buffer = Buffer.from(base64Data, 'base64');
+
+    const uploadsDir = path.join(__dirname, '../uploads');
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
+    }
+    const filePath = path.join(uploadsDir, filename);
+    fs.writeFileSync(filePath, buffer);
+    return `/uploads/${filename}`;
+  } catch (err) {
+    console.warn('[saveBase64ToFile] Warn:', err.message);
+    return null;
+  }
+};
 
 /**
  * Format date strictly as DD/MM/YYYY
@@ -287,7 +306,10 @@ async function handleSwornTranslationPaymentSuccess({ leadId, session, reqApp = 
           const existingDoc = existingClientDocs[idx] || existingClientDocs.find(d => d.name === docName && d.category === docCat);
           if (!existingDoc) {
             let cleanUrl = doc.url || '';
-            if (!cleanUrl || cleanUrl.startsWith('data:') || cleanUrl.length > 255) {
+            if (cleanUrl.startsWith('data:')) {
+              const savedFile = saveBase64ToFile(cleanUrl, `translation_doc_${client.id}_${idx}.pdf`);
+              cleanUrl = savedFile || `/uploads/translation_doc_${client.id}_${idx}.pdf`;
+            } else if (!cleanUrl || cleanUrl.length > 255) {
               cleanUrl = `/uploads/translation_doc_${client.id}_${idx}.pdf`;
             }
             const created = await prisma.document.create({
@@ -314,7 +336,10 @@ async function handleSwornTranslationPaymentSuccess({ leadId, session, reqApp = 
       });
       if (!existingDoc) {
         let cleanQualUrl = lead.qualificationData.documentUrl || '';
-        if (!cleanQualUrl || cleanQualUrl.startsWith('data:') || cleanQualUrl.length > 255) {
+        if (cleanQualUrl.startsWith('data:')) {
+          const savedFile = saveBase64ToFile(cleanQualUrl, `translation_qual_${client.id}.pdf`);
+          cleanQualUrl = savedFile || `/uploads/translation_qual_${client.id}.pdf`;
+        } else if (!cleanQualUrl || cleanQualUrl.length > 255) {
           cleanQualUrl = `/uploads/translation_qual_${client.id}.pdf`;
         }
         await prisma.document.create({
