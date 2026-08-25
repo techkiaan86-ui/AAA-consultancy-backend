@@ -99,6 +99,7 @@ const getClients = async (req, res) => {
                   url: cleanUrl,
                   category: docCat,
                   status: 'Pending',
+                  wordCount: Number(qd.wordCount) || 0,
                   comment: `Source: ${qd.sourceLanguage || qd.documentLanguage || 'English'} ➔ Target: ${qd.targetLanguage || 'Spanish'} | Words: ${qd.wordCount || 0}`
                 }
               }).catch(dErr => console.warn('[AutoDocSync Warn]:', dErr.message));

@@ -970,6 +970,7 @@ exports.checkoutTranslationDocument = async (req, res) => {
                 url: cleanUrl,
                 category: docItem.category || 'Sworn Translation',
                 status: 'Pending',
+                wordCount: Number(docItem.wordCount) || 0,
                 comment: `Source: ${docItem.sourceLanguage || 'English'} ➔ Target: ${docItem.targetLanguage || 'Spanish'} | Words: ${docItem.wordCount || 0}`
               }
             }).catch(e => console.warn('[CheckoutDocSync Warn]:', e.message));

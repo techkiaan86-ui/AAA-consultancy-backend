@@ -297,6 +297,7 @@ async function handleSwornTranslationPaymentSuccess({ leadId, session, reqApp = 
                 url: cleanUrl,
                 category: docCat,
                 status: 'Pending',
+                wordCount: Number(doc.wordCount) || Number(wordCount) || 0,
                 comment: `Source: ${doc.sourceLanguage || doc.documentLanguage || sourceLang} ➔ Target: ${doc.targetLanguage || targetLang} | Words: ${doc.wordCount || wordCount}`
               }
             }).catch(dErr => console.warn('[TranslationDocCreate Warn]:', dErr.message));
@@ -323,6 +324,7 @@ async function handleSwornTranslationPaymentSuccess({ leadId, session, reqApp = 
             url: cleanQualUrl,
             category: 'Sworn Translation',
             status: 'Pending',
+            wordCount: Number(wordCount) || 0,
             comment: `Source: ${sourceLang} ➔ Target: ${targetLang} | Words: ${wordCount}`
           }
         }).catch(dErr => console.warn('[TranslationDocCreate Warn]:', dErr.message));
