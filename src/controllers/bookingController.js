@@ -963,10 +963,10 @@ exports.checkoutTranslationDocument = async (req, res) => {
               data: {
                 clientId: existingClient.id,
                 name: docItem.name || 'Translation Document.pdf',
-                fileUrl: docItem.url || '',
+                url: docItem.url || '',
                 category: docItem.category || 'Sworn Translation',
                 status: 'Pending',
-                notes: `Source: ${docItem.sourceLanguage || 'English'} ➔ Target: ${docItem.targetLanguage || 'Spanish'} | Words: ${docItem.wordCount || 0}`
+                comment: `Source: ${docItem.sourceLanguage || 'English'} ➔ Target: ${docItem.targetLanguage || 'Spanish'} | Words: ${docItem.wordCount || 0}`
               }
             }).catch(e => console.warn('[CheckoutDocSync Warn]:', e.message));
           }

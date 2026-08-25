@@ -89,10 +89,10 @@ const getClients = async (req, res) => {
                 data: {
                   clientId: c.id,
                   name: docName,
-                  fileUrl: qd.url || qd.fileUrl || '',
+                  url: qd.url || qd.fileUrl || '',
                   category: qd.category || 'Sworn Translation',
                   status: 'Pending',
-                  notes: `Source: ${qd.sourceLanguage || qd.documentLanguage || 'English'} ➔ Target: ${qd.targetLanguage || 'Spanish'} | Words: ${qd.wordCount || 0}`
+                  comment: `Source: ${qd.sourceLanguage || qd.documentLanguage || 'English'} ➔ Target: ${qd.targetLanguage || 'Spanish'} | Words: ${qd.wordCount || 0}`
                 }
               }).catch(dErr => console.warn('[AutoDocSync Warn]:', dErr.message));
               if (createdDoc) {

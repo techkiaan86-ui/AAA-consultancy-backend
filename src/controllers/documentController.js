@@ -373,7 +373,7 @@ const uploadTranslatedDocument = async (req, res) => {
         data: {
           clientId,
           name: docName,
-          fileUrl: docFileUrl,
+          url: docFileUrl || uploadedFileUrl,
           category: 'Sworn Translation',
           translatedUrl: uploadedFileUrl,
           status: 'Translated'

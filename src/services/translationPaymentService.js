@@ -289,10 +289,10 @@ async function handleSwornTranslationPaymentSuccess({ leadId, session, reqApp = 
               data: {
                 clientId: client.id,
                 name: doc.name || 'Translation Document.pdf',
-                fileUrl: doc.url || '',
+                url: doc.url || '',
                 category: doc.category || 'Sworn Translation',
                 status: 'Pending',
-                notes: `Source: ${doc.sourceLanguage || doc.documentLanguage || sourceLang} ➔ Target: ${doc.targetLanguage || targetLang} | Words: ${doc.wordCount || wordCount}`
+                comment: `Source: ${doc.sourceLanguage || doc.documentLanguage || sourceLang} ➔ Target: ${doc.targetLanguage || targetLang} | Words: ${doc.wordCount || wordCount}`
               }
             }).catch(dErr => console.warn('[TranslationDocCreate Warn]:', dErr.message));
           }
@@ -310,10 +310,10 @@ async function handleSwornTranslationPaymentSuccess({ leadId, session, reqApp = 
           data: {
             clientId: client.id,
             name: lead.qualificationData.documentName || 'Translation Document.pdf',
-            fileUrl: lead.qualificationData.documentUrl,
+            url: lead.qualificationData.documentUrl,
             category: 'Sworn Translation',
             status: 'Pending',
-            notes: `Source: ${sourceLang} ➔ Target: ${targetLang} | Words: ${wordCount}`
+            comment: `Source: ${sourceLang} ➔ Target: ${targetLang} | Words: ${wordCount}`
           }
         }).catch(dErr => console.warn('[TranslationDocCreate Warn]:', dErr.message));
       }
