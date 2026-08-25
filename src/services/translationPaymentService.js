@@ -276,29 +276,31 @@ async function handleSwornTranslationPaymentSuccess({ leadId, session, reqApp = 
   try {
     const rawDocs = Array.isArray(lead.qualificationData?.documents) ? lead.qualificationData.documents : [];
     if (rawDocs.length > 0) {
-      for (const doc of rawDocs) {
+      const existingClientDocs = await prisma.document.findMany({
+        where: { clientId: client.id }
+      });
+      for (let idx = 0; idx < rawDocs.length; idx++) {
+        const doc = rawDocs[idx];
         if (doc.url || doc.name) {
-          const existingDoc = await prisma.document.findFirst({
-            where: {
-              clientId: client.id,
-              name: doc.name || 'Translation Document.pdf'
-            }
-          });
+          const docName = (doc.name || `Translation Document ${idx + 1}.pdf`).substring(0, 200);
+          const docCat = doc.category || 'Sworn Translation';
+          const existingDoc = existingClientDocs[idx] || existingClientDocs.find(d => d.name === docName && d.category === docCat);
           if (!existingDoc) {
             let cleanUrl = doc.url || '';
             if (!cleanUrl || cleanUrl.startsWith('data:') || cleanUrl.length > 255) {
-              cleanUrl = `/uploads/translation_doc_${client.id}.pdf`;
+              cleanUrl = `/uploads/translation_doc_${client.id}_${idx}.pdf`;
             }
-            await prisma.document.create({
+            const created = await prisma.document.create({
               data: {
                 clientId: client.id,
-                name: (doc.name || 'Translation Document.pdf').substring(0, 200),
+                name: docName,
                 url: cleanUrl,
-                category: doc.category || 'Sworn Translation',
+                category: docCat,
                 status: 'Pending',
                 comment: `Source: ${doc.sourceLanguage || doc.documentLanguage || sourceLang} ➔ Target: ${doc.targetLanguage || targetLang} | Words: ${doc.wordCount || wordCount}`
               }
             }).catch(dErr => console.warn('[TranslationDocCreate Warn]:', dErr.message));
+            if (created) existingClientDocs.push(created);
           }
         }
       }
