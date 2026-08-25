@@ -285,11 +285,15 @@ async function handleSwornTranslationPaymentSuccess({ leadId, session, reqApp = 
             }
           });
           if (!existingDoc) {
+            let cleanUrl = doc.url || '';
+            if (!cleanUrl || cleanUrl.startsWith('data:') || cleanUrl.length > 255) {
+              cleanUrl = `/uploads/translation_doc_${client.id}.pdf`;
+            }
             await prisma.document.create({
               data: {
                 clientId: client.id,
-                name: doc.name || 'Translation Document.pdf',
-                url: doc.url || '',
+                name: (doc.name || 'Translation Document.pdf').substring(0, 200),
+                url: cleanUrl,
                 category: doc.category || 'Sworn Translation',
                 status: 'Pending',
                 comment: `Source: ${doc.sourceLanguage || doc.documentLanguage || sourceLang} ➔ Target: ${doc.targetLanguage || targetLang} | Words: ${doc.wordCount || wordCount}`
@@ -306,11 +310,15 @@ async function handleSwornTranslationPaymentSuccess({ leadId, session, reqApp = 
         }
       });
       if (!existingDoc) {
+        let cleanQualUrl = lead.qualificationData.documentUrl || '';
+        if (!cleanQualUrl || cleanQualUrl.startsWith('data:') || cleanQualUrl.length > 255) {
+          cleanQualUrl = `/uploads/translation_qual_${client.id}.pdf`;
+        }
         await prisma.document.create({
           data: {
             clientId: client.id,
-            name: lead.qualificationData.documentName || 'Translation Document.pdf',
-            url: lead.qualificationData.documentUrl,
+            name: (lead.qualificationData.documentName || 'Translation Document.pdf').substring(0, 200),
+            url: cleanQualUrl,
             category: 'Sworn Translation',
             status: 'Pending',
             comment: `Source: ${sourceLang} ➔ Target: ${targetLang} | Words: ${wordCount}`

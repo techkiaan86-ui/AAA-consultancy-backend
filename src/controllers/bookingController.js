@@ -959,11 +959,15 @@ exports.checkoutTranslationDocument = async (req, res) => {
             where: { clientId: existingClient.id, name: docItem.name || 'Translation Document.pdf' }
           });
           if (!docExist) {
+            let cleanUrl = docItem.url || '';
+            if (!cleanUrl || cleanUrl.startsWith('data:') || cleanUrl.length > 255) {
+              cleanUrl = `/uploads/booking_doc_${existingClient.id}.pdf`;
+            }
             await prisma.document.create({
               data: {
                 clientId: existingClient.id,
-                name: docItem.name || 'Translation Document.pdf',
-                url: docItem.url || '',
+                name: (docItem.name || 'Translation Document.pdf').substring(0, 200),
+                url: cleanUrl,
                 category: docItem.category || 'Sworn Translation',
                 status: 'Pending',
                 comment: `Source: ${docItem.sourceLanguage || 'English'} ➔ Target: ${docItem.targetLanguage || 'Spanish'} | Words: ${docItem.wordCount || 0}`

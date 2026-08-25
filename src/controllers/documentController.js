@@ -354,10 +354,14 @@ const uploadTranslatedDocument = async (req, res) => {
       ? clientObj.lead.qualificationData.documents
       : (Array.isArray(clientObj.qualificationData?.documents) ? clientObj.qualificationData.documents : []);
     const qualDoc = qualDocs[docIndex] || qualDocs[0] || {};
-    const docName = req.body.name || targetDoc?.name || qualDoc.name || qualDoc.filename || `Translation Document ${docIndex + 1}.pdf`;
-    const docFileUrl = targetDoc?.fileUrl || qualDoc.url || qualDoc.fileUrl || '';
+    const docName = (req.body.name || targetDoc?.name || qualDoc.name || qualDoc.filename || `Translation Document ${docIndex + 1}.pdf`).substring(0, 200);
 
     const uploadedFileUrl = getFileUrl(file);
+
+    let docFileUrl = targetDoc?.url || targetDoc?.fileUrl || qualDoc.url || qualDoc.fileUrl || '';
+    if (!docFileUrl || docFileUrl.startsWith('data:') || docFileUrl.length > 255) {
+      docFileUrl = uploadedFileUrl;
+    }
 
     if (targetDoc && targetDoc.id) {
       targetDoc = await prisma.document.update({
@@ -373,7 +377,7 @@ const uploadTranslatedDocument = async (req, res) => {
         data: {
           clientId,
           name: docName,
-          url: docFileUrl || uploadedFileUrl,
+          url: docFileUrl,
           category: 'Sworn Translation',
           translatedUrl: uploadedFileUrl,
           status: 'Translated'

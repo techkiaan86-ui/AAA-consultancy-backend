@@ -82,14 +82,18 @@ const getClients = async (req, res) => {
         const qualDocs = Array.isArray(leadObj?.qualificationData?.documents) ? leadObj.qualificationData.documents : [];
         if (qualDocs.length > 0) {
           for (const qd of qualDocs) {
-            const docName = qd.name || qd.filename || 'Translation Document.pdf';
+            const docName = (qd.name || qd.filename || 'Translation Document.pdf').substring(0, 200);
             const exists = (c.documents || []).some(d => d.name === docName);
             if (!exists) {
+              let cleanUrl = qd.url || qd.fileUrl || '';
+              if (!cleanUrl || cleanUrl.startsWith('data:') || cleanUrl.length > 255) {
+                cleanUrl = `/uploads/qual_doc_${c.id}.pdf`;
+              }
               const createdDoc = await prisma.document.create({
                 data: {
                   clientId: c.id,
                   name: docName,
-                  url: qd.url || qd.fileUrl || '',
+                  url: cleanUrl,
                   category: qd.category || 'Sworn Translation',
                   status: 'Pending',
                   comment: `Source: ${qd.sourceLanguage || qd.documentLanguage || 'English'} ➔ Target: ${qd.targetLanguage || 'Spanish'} | Words: ${qd.wordCount || 0}`
