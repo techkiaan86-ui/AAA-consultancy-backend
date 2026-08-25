@@ -309,6 +309,7 @@ const uploadTranslatedDocument = async (req, res) => {
 
     const { id } = req.params;
     let targetDoc = null;
+    let docIndex = 0;
     let clientId = req.body?.clientId || req.query?.clientId;
 
     // 1. Direct fetch if id is a real document UUID
