@@ -394,25 +394,105 @@ const uploadTranslatedDocument = async (req, res) => {
       });
     }
 
-    const frontendBase = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const frontendBase = (process.env.FRONTEND_URL || 'https://aaa-crm-service.netlify.app').replace(/\/$/, '');
     const portalUrl = `${frontendBase}/#/portal/documents/${clientId}`;
+    const clientPhone = clientObj.phone || clientObj.lead?.phone;
+    const clientName = `${clientObj.firstName || ''} ${clientObj.lastName || ''}`.trim() || 'Client';
+    const docDisplayName = targetDoc.name || 'document';
 
+    // 1. WhatsApp Delivery Notification
+    if (clientPhone && clientPhone.trim() && clientPhone !== '-') {
+      try {
+        const { sendCustomWhatsApp } = require('../services/chatbotService');
+        const waMessage = `📜 *Certified Sworn Translation Ready!* 🇪🇸\n\nDear *${clientName}*,\n\nWe are pleased to inform you that the official sworn translation for *${docDisplayName}* is complete and ready. 🎉\n\nYou can now view and download your certified stamped document directly from your Client Portal:\n\n🔗 *Download Translation:* ${portalUrl}\n\n─────────────\n*AAA Business Consultancy*\n_Official Spanish Ministry Certified Translation Services_`;
+
+        await sendCustomWhatsApp(clientPhone, waMessage);
+        await prisma.communicationLog.create({
+          data: {
+            clientId: clientObj.id,
+            phone: clientPhone,
+            name: clientName,
+            channel: 'WHATSAPP',
+            direction: 'OUTBOUND',
+            deliveryStatus: 'SENT',
+            content: waMessage
+          }
+        }).catch(() => null);
+        console.log(`[uploadTranslatedDocument] ✅ WhatsApp notification sent to ${clientPhone}`);
+      } catch (waErr) {
+        console.error('[uploadTranslatedDocument] ❌ WhatsApp notification error:', waErr.message);
+      }
+    }
+
+    // 2. Email Delivery Notification
     if (clientObj.email) {
-      const { sendEmail } = require('../services/emailService');
-      sendEmail({
-        to: clientObj.email,
-        subject: 'Your Certified Sworn Translation is Ready! 🇪🇸',
-        html: `
-          <h3>Dear ${clientObj.firstName || 'Client'},</h3>
-          <p>We are pleased to inform you that the sworn translation of your document (<b>${targetDoc.name}</b>) is complete and ready.</p>
-          <p>You can now download the certified PDF directly from your Client Portal dashboard.</p>
-          <p><a href="${portalUrl}" style="display:inline-block;padding:10px 18px;background:#16a34a;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:bold;">Log in to Client Portal</a></p>
-          <br/>
-          <p>Best regards,<br/>AAA Business Consultancy Team</p>
-        `
-      }).catch((emailErr) => {
-        console.error('Failed to send email notification:', emailErr.message);
-      });
+      try {
+        const { sendEmail } = require('../services/emailService');
+        const emailHtml = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; margin: 0; padding: 20px; color: #1e293b; }
+            .container { max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.06); border: 1px solid #e2e8f0; }
+            .header { background: linear-gradient(135deg, #051A3B 0%, #0c2b5c 100%); padding: 32px 24px; text-align: center; color: #ffffff; }
+            .badge { display: inline-block; background: rgba(16, 185, 129, 0.15); border: 1px solid #10b981; color: #10b981; font-weight: 700; padding: 6px 14px; border-radius: 20px; font-size: 12px; margin-bottom: 12px; }
+            .content { padding: 32px 24px; }
+            .btn-login { display: inline-block; background: #16a34a; color: #ffffff !important; font-weight: 700; font-size: 14px; padding: 14px 28px; border-radius: 8px; text-decoration: none; box-shadow: 0 4px 12px rgba(22, 163, 74, 0.2); }
+            .footer { background: #f8fafc; padding: 20px 24px; text-align: center; font-size: 12px; color: #94a3b8; border-top: 1px solid #e2e8f0; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <div class="badge">✓ Translation Completed & Certified</div>
+              <h1 style="margin: 0; font-size: 22px; font-weight: 800;">Official Certified Translation Ready</h1>
+              <p style="margin: 8px 0 0 0; color: #cbd5e1; font-size: 13px;">AAA Business Consultancy — Spanish Ministry Certified Sworn Translation</p>
+            </div>
+            <div class="content">
+              <p style="font-size: 15px; line-height: 1.6; margin-top: 0;">Dear <strong>${clientName}</strong>,</p>
+              <p style="font-size: 14px; line-height: 1.6; color: #334155;">
+                We are pleased to inform you that the official sworn translation for <strong>${docDisplayName}</strong> is complete, certified with ministry stamps, and ready for download.
+              </p>
+              <div style="text-align: center; margin: 28px 0;">
+                <a href="${portalUrl}" class="btn-login">
+                  📥 Download Sworn Translation PDF
+                </a>
+              </div>
+              <p style="font-size: 13px; color: #64748b; line-height: 1.5;">
+                You can access your Client Portal anytime to view and download all certified translation documents and official receipts.
+              </p>
+            </div>
+            <div class="footer">
+              © ${new Date().getFullYear()} AAA Business Consultancy LLC. All rights reserved.<br>
+              Official Spanish Immigration & Certified Sworn Translation Services.
+            </div>
+          </div>
+        </body>
+        </html>
+        `;
+
+        await sendEmail({
+          to: clientObj.email,
+          subject: `📜 Certified Sworn Translation Ready — ${docDisplayName}`,
+          html: emailHtml
+        });
+        await prisma.communicationLog.create({
+          data: {
+            clientId: clientObj.id,
+            phone: null,
+            name: clientName,
+            channel: 'EMAIL',
+            direction: 'OUTBOUND',
+            deliveryStatus: 'SENT',
+            content: `Sworn Translation completed email sent to ${clientObj.email} for ${docDisplayName}`
+          }
+        }).catch(() => null);
+        console.log(`[uploadTranslatedDocument] ✅ Email notification sent to ${clientObj.email}`);
+      } catch (emailErr) {
+        console.error('[uploadTranslatedDocument] ❌ Email notification error:', emailErr.message);
+      }
     }
 
     res.json({ success: true, document: targetDoc });
