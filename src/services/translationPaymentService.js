@@ -1,5 +1,9 @@
 const fs = require('fs');
 const path = require('path');
+const bcrypt = require('bcrypt');
+const prisma = require('../config/db');
+const { sendEmail } = require('./emailService');
+const { sendCustomWhatsApp } = require('./chatbotService');
 
 const saveBase64ToFile = (dataUri, filename) => {
   try {
