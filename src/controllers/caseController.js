@@ -811,7 +811,7 @@ const reviewChecklistDoc = async (req, res) => {
 
     const doc = await prisma.document.findUnique({
       where: { id: documentId },
-      include: { checklistItem: true }
+      include: { checklistItem: true, client: true }
     });
 
     if (!doc) {
@@ -892,6 +892,93 @@ const reviewChecklistDoc = async (req, res) => {
       action: status === 'VERIFIED' ? 'DOC_VERIFIED' : 'DOC_REJECTED',
       description: `Operations staff marked document "${doc.name}" as ${status}.${comment ? ` Rejection Reason: "${comment}"` : ''}`
     });
+
+    // Send instant automated WhatsApp & Email notification to Client
+    if (doc.client) {
+      try {
+        const { sendEmail } = require('../services/emailService');
+        const { sendCustomWhatsApp } = require('../services/chatbotService');
+        const frontendUrl = (process.env.FRONTEND_URL || 'https://aaa-crm-service.netlify.app').replace(/\/$/, '');
+        const portalUrl = `${frontendUrl}/#/portal/login`;
+        const clientName = `${doc.client.firstName || ''} ${doc.client.lastName || ''}`.trim() || 'Client';
+        const docDisplayName = doc.name || doc.category || 'Document';
+
+        if (status === 'VERIFIED') {
+          if (doc.client.email) {
+            sendEmail({
+              to: doc.client.email,
+              subject: `✅ Document Approved: ${docDisplayName} - Spain Visa 🇪🇸`,
+              html: `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; border: 1px solid #e2e8f0; padding: 25px; border-radius: 10px; color: #1e293b;">
+                  <div style="text-align: center; margin-bottom: 20px;">
+                    <h2 style="color: #051A3B; margin: 0;">AAA Business Consultancy</h2>
+                    <p style="color: #64748b; font-size: 14px; margin-top: 4px;">Spain Immigration & Relocation Services</p>
+                  </div>
+                  <div style="background-color: #ecfdf5; border: 1px solid #a7f3d0; padding: 16px; border-radius: 8px; margin: 20px 0; text-align: center;">
+                    <h3 style="color: #059669; margin: 0 0 6px;">Document Verified & Approved ✅</h3>
+                    <p style="color: #047857; margin: 0; font-size: 14px;">Your checklist document <b>"${docDisplayName}"</b> has been reviewed and verified.</p>
+                  </div>
+                  <p>Hello <b>${clientName}</b>,</p>
+                  <p>Our operations team has approved your document <b>"${docDisplayName}"</b> for your application cycle.</p>
+                  <div style="text-align: center; margin: 26px 0;">
+                    <a href="${portalUrl}" style="background-color: #051A3B; color: #ffffff; padding: 12px 26px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">
+                      View Status in Portal
+                    </a>
+                  </div>
+                  <br>
+                  <p style="margin: 0;">Best regards,</p>
+                  <p style="margin: 4px 0 0; font-weight: bold; color: #051A3B;">AAA Business Consultancy Team</p>
+                </div>
+              `
+            }).catch(err => console.error('[BG-Email] Checklist Doc Approved email failed:', err.message));
+          }
+
+          if (doc.client.phone) {
+            const waMsg = `✅ *Checklist Document Approved!*\n\nHello *${clientName}*,\n\nYour uploaded checklist document *"${docDisplayName}"* has been reviewed and *VERIFIED*.\n\nTrack your application status:\n🔗 ${portalUrl}\n\n*AAA Business Consultancy Team*`;
+            sendCustomWhatsApp(doc.client.phone, waMsg).catch(err => console.error('[BG-WA] Checklist Doc Approved WA failed:', err.message));
+          }
+        } else if (status === 'REJECTED') {
+          if (doc.client.email) {
+            sendEmail({
+              to: doc.client.email,
+              subject: `⚠️ Action Required: Checklist Document Re-upload Needed - ${docDisplayName} 🇪🇸`,
+              html: `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; border: 1px solid #e2e8f0; padding: 25px; border-radius: 10px; color: #1e293b;">
+                  <div style="text-align: center; margin-bottom: 20px;">
+                    <h2 style="color: #051A3B; margin: 0;">AAA Business Consultancy</h2>
+                    <p style="color: #64748b; font-size: 14px; margin-top: 4px;">Spain Immigration & Relocation Services</p>
+                  </div>
+                  <div style="background-color: #fef2f2; border: 1px solid #fecaca; padding: 16px; border-radius: 8px; margin: 20px 0;">
+                    <h3 style="color: #dc2626; margin: 0 0 6px;">Document Correction Required ⚠️</h3>
+                    <p style="color: #991b1b; margin: 0; font-size: 14px;">Your checklist document <b>"${docDisplayName}"</b> needs correction.</p>
+                  </div>
+                  <p>Hello <b>${clientName}</b>,</p>
+                  <div style="background-color: #f8fafc; border-left: 4px solid #ef4444; padding: 12px 16px; margin: 16px 0; border-radius: 4px;">
+                    <strong style="color: #0f172a;">Rejection Reason:</strong>
+                    <p style="color: #475569; margin: 6px 0 0; font-size: 14px;">${comment || 'Document does not meet guidelines. Please re-upload a clear replacement copy.'}</p>
+                  </div>
+                  <div style="text-align: center; margin: 26px 0;">
+                    <a href="${portalUrl}" style="background-color: #051A3B; color: #ffffff; padding: 12px 26px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">
+                      Upload Replacement Document
+                    </a>
+                  </div>
+                  <br>
+                  <p style="margin: 0;">Best regards,</p>
+                  <p style="margin: 4px 0 0; font-weight: bold; color: #051A3B;">AAA Business Consultancy Team</p>
+                </div>
+              `
+            }).catch(err => console.error('[BG-Email] Checklist Doc Rejected email failed:', err.message));
+          }
+
+          if (doc.client.phone) {
+            const waMsg = `⚠️ *Action Required: Checklist Document Rejected*\n\nHello *${clientName}*,\n\nYour checklist document *"${docDisplayName}"* was *REJECTED*.\n\n*Reason:* "${comment || 'Please re-upload a clear copy'}"\n\nPlease log in to re-upload:\n🔗 ${portalUrl}\n\n*AAA Business Consultancy Team*`;
+            sendCustomWhatsApp(doc.client.phone, waMsg).catch(err => console.error('[BG-WA] Checklist Doc Rejected WA failed:', err.message));
+          }
+        }
+      } catch (notifErr) {
+        console.error('[reviewChecklistDoc Notif Error]:', notifErr.message);
+      }
+    }
 
     res.json({ document: updatedDoc, cycleAutoUpdated });
   } catch (error) {

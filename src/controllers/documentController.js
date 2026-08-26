@@ -274,17 +274,23 @@ const uploadDocument = async (req, res) => {
 const reviewDocument = async (req, res) => {
   try {
     const { id } = req.params;
-    const { status, feedbackComment } = req.body;
+    const { status, feedbackComment, comment } = req.body;
+    const finalComment = feedbackComment || comment || '';
     
+    // Normalize status to standard values if needed
+    const normalizedStatus = (status || '').toUpperCase() === 'VERIFIED' ? 'VERIFIED' : 
+                             (status || '').toUpperCase() === 'REJECTED' ? 'REJECTED' : status;
+
     const document = await prisma.document.update({
       where: { id },
-      data: { status, comment: feedbackComment }
+      data: { status: normalizedStatus, comment: finalComment || null },
+      include: { client: true }
     });
 
     const { logActivity } = require('../services/auditService');
     const reviewerName = req.user ? (req.user.fullName || req.user.email) : 'Operator';
     const reviewerRole = req.user ? (req.user.role || 'staff') : 'staff';
-    const actionType = status === 'VERIFIED' ? 'DOC_VERIFIED' : status === 'REJECTED' ? 'DOC_REJECTED' : 'DOC_REVIEWED';
+    const actionType = normalizedStatus === 'VERIFIED' ? 'DOC_VERIFIED' : normalizedStatus === 'REJECTED' ? 'DOC_REJECTED' : 'DOC_REVIEWED';
 
     logActivity({
       clientId: document.clientId || undefined,
@@ -293,8 +299,104 @@ const reviewDocument = async (req, res) => {
       actorName: reviewerName,
       actorRole: reviewerRole,
       action: actionType,
-      description: `${reviewerName} marked document "${document.name}" as ${status}.${feedbackComment ? ` Comment: "${feedbackComment}"` : ''}`
+      description: `${reviewerName} marked document "${document.name}" as ${normalizedStatus}.${finalComment ? ` Comment: "${finalComment}"` : ''}`
     });
+
+    // Send instant automated WhatsApp & Email notification to Client
+    if (document.client) {
+      try {
+        const { sendEmail } = require('../services/emailService');
+        const { sendCustomWhatsApp } = require('../services/chatbotService');
+        const frontendUrl = (process.env.FRONTEND_URL || 'https://aaa-crm-service.netlify.app').replace(/\/$/, '');
+        const portalUrl = `${frontendUrl}/#/portal/login`;
+        const clientName = `${document.client.firstName || ''} ${document.client.lastName || ''}`.trim() || 'Client';
+        const docDisplayName = document.name || document.category || 'Document';
+
+        if (normalizedStatus === 'VERIFIED') {
+          // 1. Email for Approved Document
+          if (document.client.email) {
+            sendEmail({
+              to: document.client.email,
+              subject: `✅ Document Approved: ${docDisplayName} - Spain Visa 🇪🇸`,
+              html: `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; border: 1px solid #e2e8f0; padding: 25px; border-radius: 10px; color: #1e293b;">
+                  <div style="text-align: center; margin-bottom: 20px;">
+                    <h2 style="color: #051A3B; margin: 0;">AAA Business Consultancy</h2>
+                    <p style="color: #64748b; font-size: 14px; margin-top: 4px;">Spain Immigration & Relocation Services</p>
+                  </div>
+                  <div style="background-color: #ecfdf5; border: 1px solid #a7f3d0; padding: 16px; border-radius: 8px; margin: 20px 0; text-align: center;">
+                    <h3 style="color: #059669; margin: 0 0 6px;">Document Verified & Approved ✅</h3>
+                    <p style="color: #047857; margin: 0; font-size: 14px;">Your document <b>"${docDisplayName}"</b> has passed compliance verification.</p>
+                  </div>
+                  <p>Hello <b>${clientName}</b>,</p>
+                  <p>Our document verification team has reviewed and successfully approved your uploaded document <b>"${docDisplayName}"</b> for your <b>${document.client.serviceType || 'Spain Visa'}</b> case.</p>
+                  <p>You can track the ongoing progress of your application and remaining checklist items on your Client Portal:</p>
+                  <div style="text-align: center; margin: 26px 0;">
+                    <a href="${portalUrl}" style="background-color: #051A3B; color: #ffffff; padding: 12px 26px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">
+                      Open Client Portal
+                    </a>
+                  </div>
+                  <br>
+                  <p style="margin: 0;">Best regards,</p>
+                  <p style="margin: 4px 0 0; font-weight: bold; color: #051A3B;">AAA Business Consultancy Team</p>
+                </div>
+              `
+            }).catch(err => console.error('[BG-Email] Doc Approved email failed:', err.message));
+          }
+
+          // 2. WhatsApp for Approved Document
+          if (document.client.phone) {
+            const waMsg = `✅ *Document Verified & Approved!*\n\nHello *${clientName}*,\n\nYour uploaded document *"${docDisplayName}"* has been successfully reviewed and *VERIFIED* by our compliance team for your *${document.client.serviceType || 'Spain Visa'}* application.\n\nYou can track your application progress in your portal:\n\n🔗 ${portalUrl}\n\n*AAA Business Consultancy Team*`;
+            sendCustomWhatsApp(document.client.phone, waMsg).catch(err => console.error('[BG-WA] Doc Approved WA failed:', err.message));
+          }
+          console.log(`[Auto-Notification] Sent Document Approved alert to ${document.client.email}`);
+        } else if (normalizedStatus === 'REJECTED') {
+          // 1. Email for Rejected Document
+          if (document.client.email) {
+            sendEmail({
+              to: document.client.email,
+              subject: `⚠️ Action Required: Document Re-upload Needed - ${docDisplayName} 🇪🇸`,
+              html: `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; border: 1px solid #e2e8f0; padding: 25px; border-radius: 10px; color: #1e293b;">
+                  <div style="text-align: center; margin-bottom: 20px;">
+                    <h2 style="color: #051A3B; margin: 0;">AAA Business Consultancy</h2>
+                    <p style="color: #64748b; font-size: 14px; margin-top: 4px;">Spain Immigration & Relocation Services</p>
+                  </div>
+                  <div style="background-color: #fef2f2; border: 1px solid #fecaca; padding: 16px; border-radius: 8px; margin: 20px 0;">
+                    <h3 style="color: #dc2626; margin: 0 0 6px;">Document Correction / Re-upload Required ⚠️</h3>
+                    <p style="color: #991b1b; margin: 0; font-size: 14px;">Your document <b>"${docDisplayName}"</b> could not be accepted in its current format.</p>
+                  </div>
+                  <p>Hello <b>${clientName}</b>,</p>
+                  <p>Our verification team reviewed your document <b>"${docDisplayName}"</b> and found issues that require your attention:</p>
+                  <div style="background-color: #f8fafc; border-left: 4px solid #ef4444; padding: 12px 16px; margin: 16px 0; border-radius: 4px;">
+                    <strong style="color: #0f172a;">Feedback / Reason for Rejection:</strong>
+                    <p style="color: #475569; margin: 6px 0 0; font-size: 14px;">${finalComment || 'Document is unclear or does not meet official immigration format requirements. Please re-upload a clear copy.'}</p>
+                  </div>
+                  <p>Please log in to your Client Portal to upload a revised replacement document:</p>
+                  <div style="text-align: center; margin: 26px 0;">
+                    <a href="${portalUrl}" style="background-color: #051A3B; color: #ffffff; padding: 12px 26px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">
+                      Upload Replacement Document
+                    </a>
+                  </div>
+                  <br>
+                  <p style="margin: 0;">Best regards,</p>
+                  <p style="margin: 4px 0 0; font-weight: bold; color: #051A3B;">AAA Business Consultancy Team</p>
+                </div>
+              `
+            }).catch(err => console.error('[BG-Email] Doc Rejected email failed:', err.message));
+          }
+
+          // 2. WhatsApp for Rejected Document
+          if (document.client.phone) {
+            const waMsg = `⚠️ *Action Required: Document Needs Correction*\n\nHello *${clientName}*,\n\nYour uploaded document *"${docDisplayName}"* could not be verified and was *REJECTED*.\n\n*Reason / Feedback:* "${finalComment || 'Please re-upload a clear copy meeting immigration requirements'}"\n\nPlease log in to your portal to upload a replacement:\n\n🔗 ${portalUrl}\n\n*AAA Business Consultancy Team*`;
+            sendCustomWhatsApp(document.client.phone, waMsg).catch(err => console.error('[BG-WA] Doc Rejected WA failed:', err.message));
+          }
+          console.log(`[Auto-Notification] Sent Document Rejected alert to ${document.client.email}`);
+        }
+      } catch (notifErr) {
+        console.error('[reviewDocument Notification Error]:', notifErr.message);
+      }
+    }
     
     res.json(document);
   } catch (error) {
