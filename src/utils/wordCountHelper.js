@@ -76,114 +76,76 @@ async function extractPdfTextPositionAware(fileBuffer) {
 }
 
 /**
- * Converts raw RGBA/RGB pixel buffer into a 32-bit BMP Buffer for Tesseract OCR ingestion
+ * Pure Node.js Binary Stream Extractor: Extracts raw JPEG and PNG image buffers directly
+ * from PDF binary streams without DOM Canvas or OS dependencies.
  */
-function rgbaToBmpBuffer(rgbaBuffer, width, height) {
-  const rowSize = width * 4;
-  const pixelArraySize = rowSize * height;
-  const fileSize = 54 + pixelArraySize;
+function extractRawImagesFromPdfBuffer(pdfBuffer) {
+  const images = [];
+  if (!pdfBuffer || pdfBuffer.length === 0) return images;
 
-  const buf = Buffer.alloc(fileSize);
-
-  // File Header
-  buf.write('BM', 0);
-  buf.writeUInt32LE(fileSize, 2);
-  buf.writeUInt32LE(54, 10); // Offset to pixel array
-
-  // DIB Header (BITMAPINFOHEADER)
-  buf.writeUInt32LE(40, 14); // Header size
-  buf.writeInt32LE(width, 18);
-  buf.writeInt32LE(-height, 22); // Top-down
-  buf.writeUInt16LE(1, 26); // Planes
-  buf.writeUInt16LE(32, 28); // 32 bits per pixel (RGBA)
-  buf.writeUInt32LE(0, 30); // Compression (BI_RGB)
-  buf.writeUInt32LE(pixelArraySize, 34);
-
-  let srcIdx = 0;
-  for (let y = 0; y < height; y++) {
-    const rowOffset = 54 + y * rowSize;
-    for (let x = 0; x < width; x++) {
-      const r = rgbaBuffer[srcIdx];
-      const g = rgbaBuffer[srcIdx + 1];
-      const b = rgbaBuffer[srcIdx + 2];
-      const a = rgbaBuffer[srcIdx + 3];
-
-      const dstIdx = rowOffset + x * 4;
-      buf[dstIdx] = b;     // Blue
-      buf[dstIdx + 1] = g; // Green
-      buf[dstIdx + 2] = r; // Red
-      buf[dstIdx + 3] = a; // Alpha
-
-      srcIdx += 4;
-    }
-  }
-
-  return buf;
-}
-
-/**
- * Extracts raw image buffers from Scanned / Image PDFs
- */
-async function extractImagesFromPdf(fileBuffer) {
-  try {
-    const uint8Array = new Uint8Array(fileBuffer);
-    const pdf = await getDocumentProxy(uint8Array);
-    const imageBuffers = [];
-
-    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-      const page = await pdf.getPage(pageNum);
-      const operatorList = await page.getOperatorList();
-
-      for (let i = 0; i < operatorList.fnArray.length; i++) {
-        const args = operatorList.argsArray[i];
-
-        if (args && args[0] && typeof args[0] === 'string' && args[0].startsWith('img_')) {
-          const imgName = args[0];
-          try {
-            const imgObj = await new Promise((resolve) => {
-              if (page.objs.has(imgName)) {
-                resolve(page.objs.get(imgName));
-              } else {
-                page.objs.get(imgName, (img) => resolve(img));
-              }
-            });
-
-            if (imgObj && imgObj.data && imgObj.width && imgObj.height) {
-              const { width, height, data } = imgObj;
-              let bmpBuf = null;
-
-              if (data.length === width * height * 4) { // RGBA
-                bmpBuf = rgbaToBmpBuffer(data, width, height);
-              } else if (data.length === width * height * 3) { // RGB
-                const rgba = new Uint8Array(width * height * 4);
-                let s = 0, d = 0;
-                while (s < data.length) {
-                  rgba[d] = data[s];
-                  rgba[d + 1] = data[s + 1];
-                  rgba[d + 2] = data[s + 2];
-                  rgba[d + 3] = 255;
-                  s += 3;
-                  d += 4;
-                }
-                bmpBuf = rgbaToBmpBuffer(rgba, width, height);
-              }
-
-              if (bmpBuf) {
-                imageBuffers.push(bmpBuf);
-              }
-            }
-          } catch (e) {
-            console.warn('[PDF Image Extract Warn]', e.message);
-          }
+  const buf = Buffer.isBuffer(pdfBuffer) ? pdfBuffer : Buffer.from(pdfBuffer);
+  
+  // 1. Scan for JPEG images (Starts with 0xFF 0xD8 0xFF, Ends with 0xFF 0xD9)
+  let pos = 0;
+  while (pos < buf.length - 3) {
+    if (buf[pos] === 0xFF && buf[pos + 1] === 0xD8 && buf[pos + 2] === 0xFF) {
+      const start = pos;
+      let end = start + 3;
+      while (end < buf.length - 1) {
+        if (buf[end] === 0xFF && buf[end + 1] === 0xD9) {
+          end += 2;
+          break;
         }
+        end++;
+      }
+      if (end > start + 100) { // Valid JPEG size > 100 bytes
+        const jpegBuf = buf.subarray(start, end);
+        images.push(jpegBuf);
+        pos = end;
+        continue;
       }
     }
-
-    return imageBuffers;
-  } catch (err) {
-    console.warn('[extractImagesFromPdf Err]', err.message);
-    return [];
+    pos++;
   }
+
+  // 2. Scan for PNG images (Starts with 0x89 0x50 0x4E 0x47 0x0D 0x0A 0x1A 0x0A)
+  pos = 0;
+  while (pos < buf.length - 8) {
+    if (
+      buf[pos] === 0x89 &&
+      buf[pos + 1] === 0x50 &&
+      buf[pos + 2] === 0x4E &&
+      buf[pos + 3] === 0x47 &&
+      buf[pos + 4] === 0x0D &&
+      buf[pos + 5] === 0x0A &&
+      buf[pos + 6] === 0x1A &&
+      buf[pos + 7] === 0x0A
+    ) {
+      const start = pos;
+      let end = start + 8;
+      while (end < buf.length - 8) {
+        if (
+          buf[end] === 0x49 &&
+          buf[end + 1] === 0x45 &&
+          buf[end + 2] === 0x4E &&
+          buf[end + 3] === 0x44
+        ) {
+          end += 8;
+          break;
+        }
+        end++;
+      }
+      if (end > start + 100) {
+        const pngBuf = buf.subarray(start, end);
+        images.push(pngBuf);
+        pos = end;
+        continue;
+      }
+    }
+    pos++;
+  }
+
+  return images;
 }
 
 /**
@@ -192,11 +154,11 @@ async function extractImagesFromPdf(fileBuffer) {
 async function performOcrOnPdfImages(fileBuffer, languageHint = 'English') {
   let worker = null;
   try {
-    const images = await extractImagesFromPdf(fileBuffer);
+    const images = extractRawImagesFromPdfBuffer(fileBuffer);
     if (!images || images.length === 0) return 0;
 
     // Pick Tesseract language models based on document language hint
-    let langs = 'eng+ara+urd+spa';
+    let langs = 'ara+urd+spa+eng';
     const lowerLang = (languageHint || '').toLowerCase();
     if (lowerLang.includes('arabic')) langs = 'ara+eng';
     else if (lowerLang.includes('urdu')) langs = 'urd+ara+eng';
@@ -226,7 +188,7 @@ async function performOcrOnPdfImages(fileBuffer, languageHint = 'English') {
 /**
  * Combined Tier-1 & Tier-2 Hybrid PDF Word Counter:
  * Tier 1: Fast position-aware digital text extraction
- * Tier 2: Automatic OCR Engine fallback for scanned/image PDFs returning 0 words
+ * Tier 2: Pure Binary Stream + Tesseract OCR Engine fallback for scanned/image PDFs returning 0 words
  */
 async function getPdfWordCount(fileBuffer, languageHint = 'English') {
   if (!fileBuffer || fileBuffer.length === 0) return 0;
@@ -253,7 +215,7 @@ async function getPdfWordCount(fileBuffer, languageHint = 'English') {
   let wordCount = countWordsAccurately(text);
 
   // Tier 2: If Tier 1 digital text extraction yields 0 words (Scanned Photo / Image PDF),
-  // automatically trigger Tesseract OCR Engine to scan image pixels!
+  // automatically trigger Pure Binary Stream + Tesseract OCR Engine to scan image pixels!
   if (wordCount === 0) {
     try {
       wordCount = await performOcrOnPdfImages(fileBuffer, languageHint);
@@ -268,6 +230,7 @@ async function getPdfWordCount(fileBuffer, languageHint = 'English') {
 module.exports = {
   countWordsAccurately,
   extractPdfTextPositionAware,
+  extractRawImagesFromPdfBuffer,
   performOcrOnPdfImages,
   getPdfWordCount
 };
