@@ -799,13 +799,19 @@ const uploadChecklistDoc = async (req, res) => {
 const reviewChecklistDoc = async (req, res) => {
   try {
     const { documentId } = req.params;
-    const { status, comment } = req.body; // status: 'VERIFIED' | 'REJECTED'
+    const { status, comment } = req.body;
+    
+    const statusUpper = (status || '').toUpperCase().trim();
+    const isApproved = ['VERIFIED', 'APPROVED', 'VERIFIED AND APPROVED', 'VALID'].includes(statusUpper);
+    const isRejected = ['REJECTED', 'REFUSED', 'INVALID'].includes(statusUpper);
 
-    if (!['VERIFIED', 'REJECTED'].includes(status)) {
+    if (!isApproved && !isRejected) {
       return res.status(400).json({ message: 'Status must be VERIFIED or REJECTED' });
     }
 
-    if (status === 'REJECTED' && (!comment || comment.trim() === '')) {
+    const normalizedStatus = isApproved ? 'VERIFIED' : 'REJECTED';
+
+    if (isRejected && (!comment || comment.trim() === '')) {
       return res.status(400).json({ message: 'Rejection reason is mandatory when rejecting a document.' });
     }
 

@@ -277,9 +277,11 @@ const reviewDocument = async (req, res) => {
     const { status, feedbackComment, comment } = req.body;
     const finalComment = feedbackComment || comment || '';
     
-    // Normalize status to standard values if needed
-    const normalizedStatus = (status || '').toUpperCase() === 'VERIFIED' ? 'VERIFIED' : 
-                             (status || '').toUpperCase() === 'REJECTED' ? 'REJECTED' : status;
+    // Normalize status to standard values across all dashboard variants (SuperAdmin, Admin, Operations)
+    const statusUpper = (status || '').toUpperCase().trim();
+    const isApproved = ['VERIFIED', 'APPROVED', 'VERIFIED AND APPROVED', 'VALID'].includes(statusUpper);
+    const isRejected = ['REJECTED', 'REFUSED', 'INVALID'].includes(statusUpper);
+    const normalizedStatus = isApproved ? 'VERIFIED' : isRejected ? 'REJECTED' : status;
 
     const document = await prisma.document.update({
       where: { id },
@@ -290,7 +292,7 @@ const reviewDocument = async (req, res) => {
     const { logActivity } = require('../services/auditService');
     const reviewerName = req.user ? (req.user.fullName || req.user.email) : 'Operator';
     const reviewerRole = req.user ? (req.user.role || 'staff') : 'staff';
-    const actionType = normalizedStatus === 'VERIFIED' ? 'DOC_VERIFIED' : normalizedStatus === 'REJECTED' ? 'DOC_REJECTED' : 'DOC_REVIEWED';
+    const actionType = isApproved ? 'DOC_VERIFIED' : isRejected ? 'DOC_REJECTED' : 'DOC_REVIEWED';
 
     logActivity({
       clientId: document.clientId || undefined,
@@ -312,7 +314,7 @@ const reviewDocument = async (req, res) => {
         const clientName = `${document.client.firstName || ''} ${document.client.lastName || ''}`.trim() || 'Client';
         const docDisplayName = document.name || document.category || 'Document';
 
-        if (normalizedStatus === 'VERIFIED') {
+        if (isApproved) {
           // 1. Email for Approved Document
           if (document.client.email) {
             sendEmail({
