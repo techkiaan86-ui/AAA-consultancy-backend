@@ -20,6 +20,7 @@ const getFileUrl = (file) => {
 };
 const { remindersQueue, noShowEnforcerQueue } = require('../queues/queueSetup');
 const { extractText } = require('unpdf');
+const { getPdfWordCount } = require('../utils/wordCountHelper');
 const { sendEmail } = require('../services/emailService');
 const { sendWhatsAppMessage } = require('../services/whatsappService');
 const zoomService = require('../services/zoomService');
@@ -668,19 +669,17 @@ exports.uploadTranslationDocument = async (req, res) => {
         fileBuffer = new Uint8Array(0);
       }
 
-      // Parse PDF using unpdf extractText with a 5-second timeout protection
+      // Parse PDF using spatial extraction & Unicode word counting with a 5-second timeout protection
       let docWordCount = 0;
       try {
-        const extractPromise = extractText(new Uint8Array(fileBuffer));
+        const extractPromise = getPdfWordCount(fileBuffer);
         const timeoutPromise = new Promise((_, reject) => 
           setTimeout(() => reject(new Error('PDF text extraction timed out (5s limit)')), 5000)
         );
-        const pdfData = await Promise.race([extractPromise, timeoutPromise]).catch(err => {
+        docWordCount = await Promise.race([extractPromise, timeoutPromise]).catch(err => {
           console.warn(`[PDF Parse Sworn Translation] Text extraction failed for ${file.originalname}:`, err.message);
-          return { text: '' };
+          return 0;
         });
-        const text = Array.isArray(pdfData.text) ? pdfData.text.join(' ') : (pdfData.text || '');
-        docWordCount = text.trim().split(/\s+/).filter(word => word.length > 0).length;
       } catch (err) {
         console.warn(`Error extracting text for ${file.originalname}:`, err.message);
       }

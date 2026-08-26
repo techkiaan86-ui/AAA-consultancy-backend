@@ -1,6 +1,7 @@
 const fs = require('fs');
 const prisma = require('../config/db');
 const { createDocumentNotification } = require('./notificationController');
+const { getPdfWordCount } = require('../utils/wordCountHelper');
 
 const getFileUrl = (file) => {
   if (!file) return '';
@@ -76,21 +77,21 @@ const uploadDocument = async (req, res) => {
     // Extract word count for PDF files
     let wordCount = 0;
     const isPdf = (file.originalname || '').toLowerCase().endsWith('.pdf') || file.mimetype === 'application/pdf';
-    if (isPdf && file.path) {
+    if (isPdf) {
       try {
-        const fs = require('fs');
-        const { extractText } = require('unpdf');
-        const dataBuffer = fs.readFileSync(file.path);
-        const extractPromise = extractText(new Uint8Array(dataBuffer));
-        const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('PDF text extraction timed out (5s limit)')), 5000)
-        );
-        const pdfData = await Promise.race([extractPromise, timeoutPromise]);
-        
-        const text = Array.isArray(pdfData.text) ? pdfData.text.join(' ') : (pdfData.text || '');
-        if (text) {
-          const words = text.trim().split(/\s+/).filter(w => w.length > 0);
-          wordCount = words.length;
+        let fileBuffer = file.buffer;
+        if (!fileBuffer && file.path && fs.existsSync(file.path)) {
+          fileBuffer = fs.readFileSync(file.path);
+        }
+        if (fileBuffer && fileBuffer.length > 0) {
+          const extractPromise = getPdfWordCount(fileBuffer);
+          const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('PDF text extraction timed out (5s limit)')), 5000)
+          );
+          wordCount = await Promise.race([extractPromise, timeoutPromise]).catch(err => {
+            console.warn('[PDF Parse Word Count] Could not extract text:', err.message);
+            return 0;
+          });
         }
       } catch (pdfErr) {
         console.warn('[PDF Parse Word Count] Could not extract text:', pdfErr.message);
