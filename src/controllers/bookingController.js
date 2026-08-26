@@ -669,12 +669,12 @@ exports.uploadTranslationDocument = async (req, res) => {
         fileBuffer = new Uint8Array(0);
       }
 
-      // Parse PDF using spatial extraction & Unicode word counting with a 5-second timeout protection
+      // Parse PDF using spatial extraction & Tesseract OCR fallback with a 12-second timeout protection
       let docWordCount = 0;
       try {
-        const extractPromise = getPdfWordCount(fileBuffer);
+        const extractPromise = getPdfWordCount(fileBuffer, docLang);
         const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('PDF text extraction timed out (5s limit)')), 5000)
+          setTimeout(() => reject(new Error('PDF text extraction timed out (12s limit)')), 12000)
         );
         docWordCount = await Promise.race([extractPromise, timeoutPromise]).catch(err => {
           console.warn(`[PDF Parse Sworn Translation] Text extraction failed for ${file.originalname}:`, err.message);

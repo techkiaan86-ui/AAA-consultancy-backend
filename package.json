@@ -32,6 +32,7 @@
     "resend": "^6.17.2",
     "socket.io": "^4.8.3",
     "stripe": "^22.3.2",
+    "tesseract.js": "^7.0.0",
     "twilio": "^6.0.2",
     "unpdf": "^1.6.2"
   },

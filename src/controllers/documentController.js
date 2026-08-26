@@ -84,9 +84,10 @@ const uploadDocument = async (req, res) => {
           fileBuffer = fs.readFileSync(file.path);
         }
         if (fileBuffer && fileBuffer.length > 0) {
-          const extractPromise = getPdfWordCount(fileBuffer);
+          const docLangHint = req.body.documentLanguage || req.body.sourceLanguage || 'English';
+          const extractPromise = getPdfWordCount(fileBuffer, docLangHint);
           const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('PDF text extraction timed out (5s limit)')), 5000)
+            setTimeout(() => reject(new Error('PDF text extraction timed out (12s limit)')), 12000)
           );
           wordCount = await Promise.race([extractPromise, timeoutPromise]).catch(err => {
             console.warn('[PDF Parse Word Count] Could not extract text:', err.message);
