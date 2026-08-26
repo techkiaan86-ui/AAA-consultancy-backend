@@ -575,9 +575,107 @@ const updateClientStatus = async (req, res) => {
         console.error('Failed to send sworn translation success notification email:', mailErr);
       }
     }
-    // Check if visaStatus changed to 'Visa Refused'
-    if (visaStatus === 'Visa Refused') {
+    // Check if visaStatus changed to 'Visa Approved'
+    if (visaStatus === 'Visa Approved') {
       try {
+        const { sendEmail } = require('../services/emailService');
+        const { sendCustomWhatsApp } = require('../services/chatbotService');
+        const frontendUrl = (process.env.FRONTEND_URL || 'https://aaa-crm-service.netlify.app').replace(/\/$/, '');
+        const portalUrl = `${frontendUrl}/#/portal/login`;
+        const clientName = `${client.firstName} ${client.lastName}`.trim();
+
+        // 1. Send Email (fire-and-forget)
+        if (client.email) {
+          sendEmail({
+            to: client.email,
+            subject: '🎉 Congratulations! Your Spain Visa Has Been Approved! 🇪🇸',
+            html: `
+              <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; border: 1px solid #e2e8f0; padding: 25px; border-radius: 10px; color: #1e293b;">
+                <div style="text-align: center; margin-bottom: 20px;">
+                  <h2 style="color: #051A3B; margin: 0;">AAA Business Consultancy</h2>
+                  <p style="color: #64748b; font-size: 14px; margin-top: 4px;">Spain Immigration & Relocation Services</p>
+                </div>
+                <div style="background-color: #ecfdf5; border: 1px solid #a7f3d0; padding: 18px; border-radius: 8px; margin: 20px 0; text-align: center;">
+                  <h2 style="color: #059669; margin: 0 0 8px;">Visa Approved! 🎉</h2>
+                  <p style="color: #047857; margin: 0; font-size: 15px;">Congratulations! Your Spain Visa application has been officially approved by the immigration authorities.</p>
+                </div>
+                <p>Hello <b>${clientName}</b>,</p>
+                <p>We are delighted to inform you that your <b>${client.serviceType || 'Spain Visa'}</b> application has been approved.</p>
+                <p>Please log in to your Client Portal to review your official approval details, downloaded documents, and the next steps for your NIE / Residency Card (TIE) registration in Spain.</p>
+                <div style="text-align: center; margin: 28px 0;">
+                  <a href="${portalUrl}" style="background-color: #051A3B; color: #ffffff; padding: 12px 28px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">
+                    Access Client Portal
+                  </a>
+                </div>
+                <p>If you have any questions regarding your arrival in Spain or local registration, our dedicated team is here to assist you.</p>
+                <br>
+                <p style="margin: 0;">Warm regards,</p>
+                <p style="margin: 4px 0 0; font-weight: bold; color: #051A3B;">AAA Business Consultancy Team 🇪🇸</p>
+              </div>
+            `
+          }).catch(err => console.error('[BG-Email] Visa Approved email failed:', err.message));
+        }
+
+        // 2. Send WhatsApp (fire-and-forget)
+        if (client.phone) {
+          const waMsg = `🎉 *Congratulations ${clientName}!* 🇪🇸\n\nYour Spain Visa application (*${client.serviceType || 'Spain Visa'}*) has been officially *APPROVED*! ✨\n\nOur entire team at AAA Business Consultancy congratulates you on this milestone.\n\nPlease log in to your client portal to review your approval details and next steps for your NIE / TIE registration:\n\n🔗 ${portalUrl}\n\nBest regards,\n*AAA Business Consultancy Team*`;
+          sendCustomWhatsApp(client.phone, waMsg).catch(err => console.error('[BG-WA] Visa Approved WA failed:', err.message));
+        }
+        console.log(`[Auto-Notification] Sent Visa Approved alert to ${client.email}`);
+      } catch (notifErr) {
+        console.error('[Auto-Notification] Failed to send Visa Approved alert:', notifErr.message);
+      }
+    }
+
+    // Check if visaStatus changed to 'Visa Refused' or 'Rejected'
+    if (visaStatus === 'Visa Refused' || visaStatus === 'Rejected') {
+      try {
+        const { sendEmail } = require('../services/emailService');
+        const { sendCustomWhatsApp } = require('../services/chatbotService');
+        const frontendUrl = (process.env.FRONTEND_URL || 'https://aaa-crm-service.netlify.app').replace(/\/$/, '');
+        const portalUrl = `${frontendUrl}/#/portal/login`;
+        const clientName = `${client.firstName} ${client.lastName}`.trim();
+
+        // 1. Send Email (fire-and-forget)
+        if (client.email) {
+          sendEmail({
+            to: client.email,
+            subject: 'Important Update Regarding Your Spain Visa Application 🇪🇸',
+            html: `
+              <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; border: 1px solid #e2e8f0; padding: 25px; border-radius: 10px; color: #1e293b;">
+                <div style="text-align: center; margin-bottom: 20px;">
+                  <h2 style="color: #051A3B; margin: 0;">AAA Business Consultancy</h2>
+                  <p style="color: #64748b; font-size: 14px; margin-top: 4px;">Spain Immigration & Relocation Services</p>
+                </div>
+                <div style="background-color: #fef2f2; border: 1px solid #fecaca; padding: 18px; border-radius: 8px; margin: 20px 0;">
+                  <h3 style="color: #dc2626; margin: 0 0 8px;">Application Status Update</h3>
+                  <p style="color: #991b1b; margin: 0; font-size: 14px;">We have received a decision regarding your Spain Visa application (${client.serviceType || 'Spain Visa'}).</p>
+                </div>
+                <p>Hello <b>${clientName}</b>,</p>
+                <p>We are writing to inform you that your visa application has received a refusal / rejection notice from the immigration authorities.</p>
+                <p>Please rest assured that our legal and immigration specialists are actively analyzing the grounds for refusal. Our team will guide you on the next course of action, which may include filing an <b>administrative appeal</b> or initiating a <b>resubmission cycle</b>.</p>
+                <p>Please log in to your Client Portal to review your case status:</p>
+                <div style="text-align: center; margin: 28px 0;">
+                  <a href="${portalUrl}" style="background-color: #051A3B; color: #ffffff; padding: 12px 28px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">
+                    View Case in Portal
+                  </a>
+                </div>
+                <p>Your dedicated Case Officer will also be in touch with you shortly.</p>
+                <br>
+                <p style="margin: 0;">Sincerely,</p>
+                <p style="margin: 4px 0 0; font-weight: bold; color: #051A3B;">AAA Business Consultancy Team</p>
+              </div>
+            `
+          }).catch(err => console.error('[BG-Email] Visa Refused email failed:', err.message));
+        }
+
+        // 2. Send WhatsApp (fire-and-forget)
+        if (client.phone) {
+          const waMsg = `📢 *Important Update on Your Spain Visa Application*\n\nHello *${clientName}*,\n\nWe have received an update regarding your Spain Visa application (*${client.serviceType || 'Spain Visa'}*). The application has received a refusal notice.\n\nOur legal and immigration specialists are already reviewing the case details to prepare the next steps (such as an administrative appeal or resubmission).\n\nPlease check your client portal for the complete case status:\n\n🔗 ${portalUrl}\n\nYour Case Officer will contact you soon.\n\n*AAA Business Consultancy Team*`;
+          sendCustomWhatsApp(client.phone, waMsg).catch(err => console.error('[BG-WA] Visa Refused WA failed:', err.message));
+        }
+        console.log(`[Auto-Notification] Sent Visa Refused alert to ${client.email}`);
+
         // Find total payments made by this client (across all paid status variants)
         const payments = await prisma.payment.findMany({
           where: { clientId: id, status: { in: ['Paid', 'Payment Completed', 'Payment Received', 'COMPLETED', 'Paid Fees'] } }
@@ -608,7 +706,7 @@ const updateClientStatus = async (req, res) => {
           }
         });
       } catch (err) {
-        console.error('Failed to auto-trigger refund request calculation:', err.message);
+        console.error('Failed to auto-trigger refund request calculation or notification:', err.message);
       }
     }
     

@@ -977,10 +977,95 @@ const recordGovernmentDecision = async (req, res) => {
 
     // Update Client.visaStatus to "Visa Approved" or "Visa Refused"
     const newVisaStatus = governmentDecision === 'Approved' ? 'Visa Approved' : 'Visa Refused';
-    await prisma.client.update({
+    const updatedClient = await prisma.client.update({
       where: { id: existingCycle.clientId },
       data: { visaStatus: newVisaStatus }
     });
+
+    // Send WhatsApp & Email Alert for Official Decision
+    try {
+      const { sendEmail } = require('../services/emailService');
+      const { sendCustomWhatsApp } = require('../services/chatbotService');
+      const frontendUrl = (process.env.FRONTEND_URL || 'https://aaa-crm-service.netlify.app').replace(/\/$/, '');
+      const portalUrl = `${frontendUrl}/#/portal/login`;
+      const clientName = `${updatedClient.firstName} ${updatedClient.lastName}`.trim();
+
+      if (newVisaStatus === 'Visa Approved') {
+        if (updatedClient.email) {
+          sendEmail({
+            to: updatedClient.email,
+            subject: '🎉 Congratulations! Your Spain Visa Has Been Approved! 🇪🇸',
+            html: `
+              <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; border: 1px solid #e2e8f0; padding: 25px; border-radius: 10px; color: #1e293b;">
+                <div style="text-align: center; margin-bottom: 20px;">
+                  <h2 style="color: #051A3B; margin: 0;">AAA Business Consultancy</h2>
+                  <p style="color: #64748b; font-size: 14px; margin-top: 4px;">Spain Immigration & Relocation Services</p>
+                </div>
+                <div style="background-color: #ecfdf5; border: 1px solid #a7f3d0; padding: 18px; border-radius: 8px; margin: 20px 0; text-align: center;">
+                  <h2 style="color: #059669; margin: 0 0 8px;">Visa Approved! 🎉</h2>
+                  <p style="color: #047857; margin: 0; font-size: 15px;">Congratulations! Your Spain Visa application has been officially approved by the immigration authorities.</p>
+                </div>
+                <p>Hello <b>${clientName}</b>,</p>
+                <p>We are delighted to inform you that your <b>${updatedClient.serviceType || 'Spain Visa'}</b> application has been approved.</p>
+                <p>Please log in to your Client Portal to review your official approval details and the next steps for your NIE / Residency Card (TIE) registration in Spain.</p>
+                <div style="text-align: center; margin: 28px 0;">
+                  <a href="${portalUrl}" style="background-color: #051A3B; color: #ffffff; padding: 12px 28px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">
+                    Access Client Portal
+                  </a>
+                </div>
+                <p>If you have any questions, our dedicated team is here to assist you.</p>
+                <br>
+                <p style="margin: 0;">Warm regards,</p>
+                <p style="margin: 4px 0 0; font-weight: bold; color: #051A3B;">AAA Business Consultancy Team 🇪🇸</p>
+              </div>
+            `
+          }).catch(err => console.error('[BG-Email] Decision Approved email failed:', err.message));
+        }
+
+        if (updatedClient.phone) {
+          const waMsg = `🎉 *Congratulations ${clientName}!* 🇪🇸\n\nYour Spain Visa application (*${updatedClient.serviceType || 'Spain Visa'}*) has been officially *APPROVED*! ✨\n\nPlease log in to your client portal to review your approval details and next steps:\n\n🔗 ${portalUrl}\n\nBest regards,\n*AAA Business Consultancy Team*`;
+          sendCustomWhatsApp(updatedClient.phone, waMsg).catch(err => console.error('[BG-WA] Decision Approved WA failed:', err.message));
+        }
+      } else if (newVisaStatus === 'Visa Refused') {
+        if (updatedClient.email) {
+          sendEmail({
+            to: updatedClient.email,
+            subject: 'Important Update Regarding Your Spain Visa Application 🇪🇸',
+            html: `
+              <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; border: 1px solid #e2e8f0; padding: 25px; border-radius: 10px; color: #1e293b;">
+                <div style="text-align: center; margin-bottom: 20px;">
+                  <h2 style="color: #051A3B; margin: 0;">AAA Business Consultancy</h2>
+                  <p style="color: #64748b; font-size: 14px; margin-top: 4px;">Spain Immigration & Relocation Services</p>
+                </div>
+                <div style="background-color: #fef2f2; border: 1px solid #fecaca; padding: 18px; border-radius: 8px; margin: 20px 0;">
+                  <h3 style="color: #dc2626; margin: 0 0 8px;">Application Status Update</h3>
+                  <p style="color: #991b1b; margin: 0; font-size: 14px;">We have received a decision regarding your Spain Visa application (${updatedClient.serviceType || 'Spain Visa'}).</p>
+                </div>
+                <p>Hello <b>${clientName}</b>,</p>
+                <p>We are writing to inform you that your visa application has received a refusal notice from the immigration authorities.</p>
+                <p>Our legal and immigration specialists are actively analyzing the grounds for refusal to guide you on the next course of action (administrative appeal or resubmission).</p>
+                <div style="text-align: center; margin: 28px 0;">
+                  <a href="${portalUrl}" style="background-color: #051A3B; color: #ffffff; padding: 12px 28px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">
+                    View Case in Portal
+                  </a>
+                </div>
+                <p>Your Case Officer will contact you shortly.</p>
+                <br>
+                <p style="margin: 0;">Sincerely,</p>
+                <p style="margin: 4px 0 0; font-weight: bold; color: #051A3B;">AAA Business Consultancy Team</p>
+              </div>
+            `
+          }).catch(err => console.error('[BG-Email] Decision Refused email failed:', err.message));
+        }
+
+        if (updatedClient.phone) {
+          const waMsg = `📢 *Important Update on Your Spain Visa Application*\n\nHello *${clientName}*,\n\nWe have received an update regarding your Spain Visa application (*${updatedClient.serviceType || 'Spain Visa'}*). The application has received a refusal notice.\n\nOur legal and immigration specialists are reviewing the case to prepare the next steps (appeal or resubmission).\n\nPlease check your client portal for the complete case details:\n\n🔗 ${portalUrl}\n\nYour Case Officer will contact you soon.\n\n*AAA Business Consultancy Team*`;
+          sendCustomWhatsApp(updatedClient.phone, waMsg).catch(err => console.error('[BG-WA] Decision Refused WA failed:', err.message));
+        }
+      }
+    } catch (notifErr) {
+      console.error('[recordGovernmentDecision Notif Error]:', notifErr.message);
+    }
 
     logActivity({
       clientId: existingCycle.clientId,
